@@ -15,23 +15,38 @@ def translate(text: str, source_lang: str, target_lang: str = "mn") -> str:
     raise ValueError(f"Unknown translation provider: {PROVIDER}")
 
 
+def to_mongolian(segments: list, source_lang: str) -> list:
+    """
+    Translates segment texts to Mongolian, preserving start/duration.
+
+    English source  → one step:  en → mn
+    Any other source → two steps: source → en (Google), then en → mn
+    """
+    result = []
+    for seg in segments:
+        if source_lang == "en":
+            mn_text = translate(seg["text"], "en", "mn")
+        else:
+            en_text = translate(seg["text"], source_lang, "en")
+            mn_text = translate(en_text, "en", "mn")
+        result.append({
+            "text": mn_text,
+            "start": seg["start"],
+            "duration": seg["duration"],
+        })
+    return result
+
+
 def _google_translate(text: str, source_lang: str, target_lang: str) -> str:
     url = "https://translation.googleapis.com/language/translate/v2"
-    try:
-        resp = httpx.post(url, params={"key": GOOGLE_KEY}, json={
-            "q": text,
-            "source": source_lang,
-            "target": target_lang,
-            "format": "text",
-        }, timeout=15)
-        resp.raise_for_status()
-        return resp.json()["data"]["translations"][0]["translatedText"]
-    except httpx.HTTPStatusError:
-        # Pivot via English if direct path is unsupported
-        if source_lang != "en" and target_lang == "mn":
-            en_text = _google_translate(text, source_lang, "en")
-            return _google_translate(en_text, "en", "mn")
-        raise
+    resp = httpx.post(url, params={"key": GOOGLE_KEY}, json={
+        "q": text,
+        "source": source_lang,
+        "target": target_lang,
+        "format": "text",
+    }, timeout=15)
+    resp.raise_for_status()
+    return resp.json()["data"]["translations"][0]["translatedText"]
 
 
 def _chimege_translate(text: str, source_lang: str, target_lang: str) -> str:
