@@ -1,0 +1,3 @@
+#equivalent of package.json dependencies
+
+pip freeze > requirements.txt

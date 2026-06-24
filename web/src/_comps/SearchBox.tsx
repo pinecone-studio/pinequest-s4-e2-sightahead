@@ -37,7 +37,7 @@ export default function SearchBox({
     <div className="w-full max-w-2xl mx-auto px-4">
       <div className="text-center mb-8 space-y-3">
         <p className="text-muted-foreground text-sm sm:text-base max-w-md mx-auto">
-          Хэл харгалзахгүй, \n Хэрэгтэй зүйлээ эх хэл дээрээ ав
+          Хэл харгалзахгүйгээр хэрэгтэй зүйлээ эх хэл дээрээ ав
         </p>
       </div>
 
