@@ -11,8 +11,8 @@ youtube-transcript-api
 yt-dlp
 faster-whisper
 
-# AI (summary generation)
-openai
+# Translation + Summary
+google-generativeai
 httpx
 mutagen
 
