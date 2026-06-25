@@ -26,7 +26,7 @@ class Settings:
     firebase_credentials_json: str | None
     firebase_credentials_path: str | None
     firebase_storage_bucket: str | None
-    gemini_api_key: str | None
+    openai_api_key: str | None
     hf_token: str | None
 
 
@@ -43,14 +43,14 @@ def get_settings() -> Settings:
         firebase_credentials_json=os.getenv("FIREBASE_CREDENTIALS_JSON"),
         firebase_credentials_path=os.getenv("FIREBASE_CREDENTIALS_PATH"),
         firebase_storage_bucket=os.getenv("FIREBASE_STORAGE_BUCKET"),
-        gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
         hf_token=os.getenv("HF_TOKEN"),
     )
 
 
-# --- Processing pipeline (caption → translate → TTS dub) ---
+# --- Processing pipeline (caption → TTS dub) ---
 # Module-level constants consumed by the dub pipeline services.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY", "")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "eastus")
