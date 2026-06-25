@@ -1,5 +1,11 @@
 venv/
 .env
+
+# Firebase service account key — НУУЦ, хэзээ ч commit хийхгүй
+firebase-credentials.json
+*firebase-adminsdk*.json
+*serviceAccount*.json
+
 __pycache__/
 *.pyc
 tmp/

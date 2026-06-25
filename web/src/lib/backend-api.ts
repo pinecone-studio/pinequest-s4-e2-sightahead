@@ -1,4 +1,18 @@
+import { firebaseAuth } from "@/lib/firebase";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+// Нэвтэрсэн хэрэглэгчийн Firebase ID token-ийг бүх backend хүсэлтэд автоматаар хавсаргадаг
+// төв fetch wrapper. Энэ нь frontend талын auth "middleware"-ийн үүргийг гүйцэтгэнэ.
+export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const user = firebaseAuth.currentUser;
+  if (user) {
+    const token = await user.getIdToken();
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+}
 
 export type Segment = {
   start: number;
@@ -32,7 +46,7 @@ export async function syncFirebaseUser(idToken: string) {
 }
 
 export async function processVideo(videoId: string): Promise<ProcessResult> {
-  const response = await fetch(`${API_BASE_URL}/process`, {
+  const response = await authFetch(`/process`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ video_id: videoId }),
