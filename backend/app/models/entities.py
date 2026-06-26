@@ -31,6 +31,7 @@ class UserProfile(BaseModel):
     email: str | None = None
     display_name: str | None = None
     avatar_url: str | None = None
+    is_guest: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     last_login_at: datetime = Field(default_factory=utc_now)
