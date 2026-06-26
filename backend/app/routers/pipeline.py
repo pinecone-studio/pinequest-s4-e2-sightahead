@@ -1,11 +1,3 @@
-"""Synchronous dub pipeline: YouTube captions -> Mongolian translation -> TTS dub.
-
-PATH A only (youtube_transcript_api captions). The yt-dlp + Whisper audio
-fallback (Path B) was removed for the free-tier deploy — it needs heavy ML
-deps and gets IP-blocked by YouTube on datacenter hosts anyway. If a video has
-no captions, the frontend's own transcript route is the showcase fallback.
-"""
-
 import os
 
 from fastapi import APIRouter, HTTPException, status
@@ -42,9 +34,6 @@ def _local_processing_enabled() -> bool:
 
 @router.post("/captions")
 async def get_captions(request: ProcessRequest):
-    """Lightweight captions-only path: youtube_transcript_api segments, no
-    translation/TTS/upload. Fast enough for the free tier, and independent of
-    the ENVIRONMENT processing guard that /process uses."""
     video_id = extract_video_id(request.video_id)
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL or video ID")

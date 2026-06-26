@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+﻿from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from app.models.entities import UserProfile
 from app.services import cache_service, session_service
-from app.services.auth_service import get_current_user, set_guest_cookie
+from app.services.auth_service import get_current_user
 from app.services.firebase_service import get_firebase_app
 
 
@@ -26,12 +26,24 @@ def sync_current_user(current_user: UserProfile = Depends(get_current_user)) -> 
 
 @router.post("/guest", response_model=UserProfile)
 def create_guest_session(response: Response) -> UserProfile:
-    # Explicit variant of the same guest bootstrap that get_current_user now
-    # does automatically for any unauthenticated request — kept for callers
-    # that want to mint a session up front rather than relying on the
-    # transparent fallback.
     session = session_service.create_guest_session()
-    set_guest_cookie(response, session.session_id)
+    # SameSite=None is required because frontend and backend are always
+    # different origins here (Vercel <-> Render, or localhost:3000 <->
+    # 127.0.0.1:8000 in dev), and SameSite=None requires Secure. That means
+    # this cookie only round-trips over real HTTPS â€” it works against the
+    # deployed Render backend, but NOT against a local backend served over
+    # plain http://127.0.0.1:8000 (browsers withhold Secure cookies on any
+    # non-HTTPS connection; there is no localhost exception for this, unlike
+    # for "powerful feature" APIs). Test guest sessions against the deployed
+    # backend, or run local dev over HTTPS, to exercise this flow.
+    response.set_cookie(
+        key="session_id",
+        value=session.session_id,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=60 * 60 * 24 * 30,
+    )
     return UserProfile(id=session.session_id, display_name="Guest", is_guest=True)
 
 
@@ -51,6 +63,15 @@ class RegisterResponse(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+def _demo_identity() -> dict[str, str]:
+    identity = {
+        "uid": "sightahead-demo-user",
+        "email": "demo@sightahead.local",
+    }
+    identity["name"] = "Demo user"
+    return identity
 
 
 @router.post(
@@ -111,6 +132,43 @@ def register(request: RegisterRequest) -> RegisterResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed.",
+        ) from exc
+
+
+@router.post("/demo", response_model=RegisterResponse)
+def demo_login() -> RegisterResponse:
+    from firebase_admin import auth as firebase_auth
+
+    demo = _demo_identity()
+
+    try:
+        get_firebase_app()
+        try:
+            firebase_user = firebase_auth.get_user(demo["uid"])
+        except firebase_auth.UserNotFoundError:
+            try:
+                firebase_user = firebase_auth.get_user_by_email(demo["email"])
+            except firebase_auth.UserNotFoundError:
+                firebase_user = firebase_auth.create_user(
+                    uid=demo["uid"],
+                    email=demo["email"],
+                    display_name=demo["name"],
+                )
+
+        user = cache_service.upsert_user_from_token(
+            {
+                "uid": firebase_user.uid,
+                "email": firebase_user.email or demo["email"],
+                "name": firebase_user.display_name or demo["name"],
+                "picture": firebase_user.photo_url,
+            }
+        )
+        custom_token = firebase_auth.create_custom_token(firebase_user.uid).decode("utf-8")
+        return RegisterResponse(user=user, custom_token=custom_token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Demo login failed.",
         ) from exc
 
 

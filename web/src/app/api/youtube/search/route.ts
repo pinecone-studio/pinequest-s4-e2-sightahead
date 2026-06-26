@@ -7,12 +7,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type SearchResultType = "all" | "video" | "channel" | "playlist";
+type YouTubeSearch = typeof import("yt-search").default;
 
 const TYPE_FILTERS: Partial<Record<SearchResultType, string>> = {
   video: "EgIQAQ%3D%3D",
   channel: "EgIQAg%3D%3D",
   playlist: "EgIQAw%3D%3D",
 };
+
+async function getYouTubeSearch(): Promise<YouTubeSearch> {
+  const ytSearchModule = await import("yt-search");
+  return typeof ytSearchModule === "function" ? ytSearchModule : ytSearchModule.default!;
+}
 
 function getSearchType(value: string | null): SearchResultType {
   if (value === "video" || value === "channel" || value === "playlist") {
@@ -204,6 +210,7 @@ export async function GET(request: NextRequest) {
       } satisfies YouTubeSearchResponse,
     );
   } catch (error) {
+    console.log("YouTube search error:", error);
     const message = error instanceof Error ? error.message : "YouTube search failed.";
 
     return Response.json({ error: message }, { status: 502 });
