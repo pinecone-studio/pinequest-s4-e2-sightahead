@@ -1,35 +1,20 @@
+# Web framework
 fastapi
 uvicorn[standard]
 python-dotenv
 pydantic
 
-# Caption / STT
-youtube-transcript-api
-# YouTube changes its extraction signature often; yt-dlp ships near-daily
-# releases to keep up — re-pin this regularly (github.com/yt-dlp/yt-dlp/releases).
-# Full extraction (nsig/PO token solving) also needs a JS runtime on the
-# build host — install `deno` in the Render build step alongside this.
-yt-dlp==2026.3.17
+# Auth / Database (Firebase Auth + Firestore + Storage)
+firebase-admin
 
-# Translation + Summary
+# Captions — PATH A (youtube_transcript_api). No Path B (yt-dlp/Whisper).
+youtube-transcript-api
+
+# Translation + Summary (OpenAI)
 openai
+
+# HTTP client (Azure TTS REST calls)
 httpx
 
-# Audio
-pydub
-
-# Database (legacy cache fallback)
-sqlalchemy
-psycopg2-binary
-
-# Auth (email/password extension point)
-python-jose[cryptography]
-passlib[bcrypt]
-
-# FastAPI extras
-python-multipart
-
-# TTS
-
-# --- Tur orхисон (1GB+) ---
-# pyannote.audio   <- эрэгтэй/эмэгтэй speaker detection
+# Audio duration probing
+mutagen
