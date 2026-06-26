@@ -7,7 +7,6 @@ export const dynamic = "force-dynamic";
 
 type SearchResultType = "all" | "video" | "channel" | "playlist";
 type YouTubeSearch = typeof import("yt-search").default;
-type RuntimeImport = (id: string) => Promise<{ default?: YouTubeSearch } | YouTubeSearch>;
 
 const TYPE_FILTERS: Partial<Record<SearchResultType, string>> = {
   video: "EgIQAQ%3D%3D",
@@ -16,8 +15,7 @@ const TYPE_FILTERS: Partial<Record<SearchResultType, string>> = {
 };
 
 async function getYouTubeSearch(): Promise<YouTubeSearch> {
-  const runtimeImport = Function("id", "return import(id)") as RuntimeImport;
-  const ytSearchModule = await runtimeImport("yt-search");
+  const ytSearchModule = await import("yt-search");
   return typeof ytSearchModule === "function" ? ytSearchModule : ytSearchModule.default!;
 }
 
