@@ -7,6 +7,7 @@ routers/summary.py; this router owns the actual audio/dub generation.
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from yt_dlp.utils import DownloadError
 from app.utils.audio import save_audio, audio_url_path, audio_duration_ms_from_bytes
 from app.services.caption_fetcher import fetch_captions
 from app.services.whisper_service import transcribe
@@ -47,7 +48,23 @@ async def process_video(request: ProcessRequest):
     else:
         # PATH B: yt-dlp + Whisper fallback
         youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-        source_lang, segments = transcribe(youtube_url)
+        try:
+            source_lang, segments = transcribe(youtube_url)
+        except DownloadError as exc:
+            # yt-dlp failed to download audio (e.g. YouTube blocking the
+            # server IP with "Sign in to confirm you're not a bot"). Raising
+            # HTTPException here (instead of letting it bubble up) keeps the
+            # error response inside CORSMiddleware so the browser gets a real
+            # CORS header instead of a bare, header-less 500.
+            raise HTTPException(
+                status_code=502,
+                detail="Could not fetch audio from YouTube",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Video processing failed",
+            ) from exc
 
     # Translate to Mongolian
     segments = to_mongolian(segments, source_lang)
