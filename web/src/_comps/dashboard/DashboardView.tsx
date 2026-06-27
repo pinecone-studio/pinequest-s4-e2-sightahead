@@ -17,6 +17,7 @@ import { RecommendedVideos } from "@/_comps/dashboard/RecommendedVideos";
 import { ScholarOverlay } from "@/_comps/dashboard/ScholarOverlay";
 import { DashboardHeader } from "@/_comps/dashboard/DashboardHeader";
 import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
+import { useDubAudio } from "@/_comps/dashboard/useDubAudio";
 import { VideoPane } from "@/_comps/dashboard/VideoPane";
 import { SubtitlePane } from "@/_comps/dashboard/SubtitlePane";
 import SearchResults from "@/_comps/youtube-search/SearchResults";
@@ -41,7 +42,6 @@ import type {
   YouTubeVideoSearchResult,
 } from "@/lib/youtube-search";
 import { useProcessedVideo } from "./useProcessedVideo";
-import { base64ToBlobUrl } from "@/lib/process-stream";
 import { toast } from "@/_comps/ui/Sonner";
 
 export type DashboardVideoSelection = {
@@ -189,6 +189,8 @@ export default function DashboardView({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [dubMode, setDubMode] = useState<"mongolian" | "original">("original");
+  const [voiceGender, setVoiceGender] = useState<"male" | "female">("male");
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<YouTubeSearchResult[]>([]);
@@ -200,7 +202,6 @@ export default function DashboardView({
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState("");
   const playbackRef = useRef({ time: 0, duration: 0 });
-  const lastAudioStartRef = useRef<number>(-1);
 
   // Fetch the user's saved watch history from the backend.
   const reloadHistory = useCallback(async () => {
@@ -277,6 +278,7 @@ export default function DashboardView({
   }, [fallbackItem, historyItems]);
   const segmentDuration = activeItem?.durationSeconds ?? FALLBACK_DURATION;
   const player = useYouTubePlayer(videoId, segmentDuration);
+  const dub = useDubAudio(videoId, player.time, dubMode === "mongolian", voiceGender, player.playbackRate);
   // Fetches captions for the selected video (Path A, client-side) and exposes
   // them as `processedSegments` for the SubtitlePane to render.
   const {
@@ -325,19 +327,13 @@ export default function DashboardView({
     playbackRef.current = { time: player.time, duration: player.duration };
   }, [player.duration, player.time]);
 
-  // Play dubbed audio for the active segment, synced to player.time.
   useEffect(() => {
-    if (!player.playing) return;
-    const seg = processedSegments.find(
-      (s) => s.audio_b64 && player.time >= s.start && player.time < s.start + s.duration,
-    );
-    if (!seg?.audio_b64 || seg.start === lastAudioStartRef.current) return;
-    lastAudioStartRef.current = seg.start;
-    const url = base64ToBlobUrl(seg.audio_b64);
-    const clip = new Audio(url);
-    clip.play().catch(() => {});
-    clip.onended = () => URL.revokeObjectURL(url);
-  }, [player.time, player.playing, processedSegments]);
+    if (dubMode === "mongolian") {
+      player.mute();
+    } else {
+      player.unMute();
+    }
+  }, [dubMode, player.mute, player.unMute]);
 
   // Log the caption-fetch lifecycle for the selected video.
   useEffect(() => {
@@ -347,6 +343,15 @@ export default function DashboardView({
       console.log(`captions loaded: ${processedSegments.length} segments for ${videoId}`);
     }
   }, [processedSegments, processingLoading, processingError, videoId]);
+
+  // Unlock browser autoplay gate on first user interaction, then toggle dub.
+  const handleToggleDub = useCallback(() => {
+    try {
+      const ctx: AudioContext = new ((window as any).AudioContext ?? (window as any).webkitAudioContext)()
+      void ctx.resume().then(() => ctx.close())
+    } catch {}
+    setDubMode((m) => (m === "mongolian" ? "original" : "mongolian"))
+  }, [])
 
   // Persist the current playback position to watch history (called on a timer,
   // on unmount, and after adding a note).
@@ -627,13 +632,24 @@ export default function DashboardView({
           subtitle={
             videoId ? (
               <SubtitlePane
-                segments={processedSegments}
+                segments={
+                  dubMode === "mongolian" && dub.translatedSegments.length > 0
+                    ? dub.translatedSegments
+                    : processedSegments
+                }
                 currentTime={player.time}
                 loading={processingLoading}
                 error={processingError}
               />
             ) : null
           }
+          dubMode={dubMode}
+          dubStatus={dub.step}
+          dubProgress={dub.progress}
+          dubError={dub.error}
+          voiceGender={voiceGender}
+          onToggleDub={handleToggleDub}
+          onToggleGender={() => setVoiceGender((g) => (g === "male" ? "female" : "male"))}
         />
         {notesCollapsed ? (
           <RecommendedVideos

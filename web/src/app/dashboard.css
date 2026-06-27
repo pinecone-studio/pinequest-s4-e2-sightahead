@@ -480,6 +480,77 @@
   letter-spacing: 0.12em;
 }
 
+.dashboard-dub-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dashboard-dub-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-dub-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dashboard-dub-progress-track {
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(128, 144, 118, 0.18);
+  overflow: hidden;
+}
+
+.dashboard-dub-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: #9dae92;
+  transition: width 0.35s ease;
+}
+
+.dashboard-dub-btn {
+  font: 11px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  color: #58685c;
+  background: transparent;
+  border: 1px solid #2e3d30;
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.dashboard-dub-btn:hover:not(:disabled) {
+  color: #9dae92;
+  border-color: #9dae92;
+}
+
+.dashboard-dub-btn.active {
+  color: #9dae92;
+  border-color: #9dae92;
+}
+
+.dashboard-dub-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-dub-status {
+  font: 10px var(--font-mono), ui-monospace, monospace;
+  color: #58685c;
+  letter-spacing: 0.1em;
+}
+
+.dashboard-dub-error {
+  font: 10px var(--font-mono), ui-monospace, monospace;
+  color: #a05050;
+}
+
 .dashboard-saved-header {
   display: flex;
   align-items: center;

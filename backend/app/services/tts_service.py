@@ -26,13 +26,14 @@ def synthesize(text: str, options: dict = None) -> bytes:
 
 
 def _azure_synthesize(text: str, options: dict) -> bytes:
-    gender = options.get("gender", "female")
-    voice = _AZURE_VOICES.get(gender, _AZURE_VOICES["female"])
+    gender = options.get("gender", "male")
+    voice = _AZURE_VOICES.get(gender, _AZURE_VOICES["male"])
+    rate = os.getenv("AZURE_TTS_RATE", "+30%")
 
     safe_text = saxutils.escape(text)
     ssml = (
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='mn-MN'>"
-        f"<voice name='{voice}'>{safe_text}</voice>"
+        f"<voice name='{voice}'><prosody rate='{rate}'>{safe_text}</prosody></voice>"
         "</speak>"
     )
     resp = httpx.post(

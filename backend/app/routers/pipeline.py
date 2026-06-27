@@ -10,6 +10,7 @@ so the UI can play it like a live dub.
 import base64
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -38,6 +39,7 @@ class ProcessRequest(BaseModel):
     video_id: str | None = None
     source_lang: str = "en"
     segments: list[SegmentInput] = []
+    gender: str = "female"
 
 
 class SummaryRequest(BaseModel):
@@ -94,55 +96,52 @@ async def process_video(request: ProcessRequest):
                 request.video_id,
                 total,
             )
-            # Detailed, typed error back to the client over SSE.
             yield _sse({"error": f"translation failed: {type(exc).__name__}: {exc}"})
             return
 
-        # 2. TTS per segment, streaming each one back as soon as it's ready.
+        # 2. TTS in parallel — all segments at once, stream each as it finishes.
+        # Frontend places segments by index so out-of-order delivery is fine.
         tts_failures = 0
-        for i, seg in enumerate(segments_in):
-            mn_text = translations[i] if i < len(translations) else seg.text
+
+        def _tts_one(i: int) -> tuple[int, str, str, int]:
+            mn_text = translations[i] if i < len(translations) else segments_in[i].text
             try:
-                audio_bytes = synthesize(mn_text)
+                audio_bytes = synthesize(mn_text, {"gender": request.gender})
                 audio_ms = audio_duration_ms_from_bytes(audio_bytes)
                 audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
             except Exception as exc:  # noqa: BLE001
-                tts_failures += 1
                 logger.exception(
                     "/process ✗ TTS failed for segment %d/%d (%s: %s) text=%r",
-                    i,
-                    total,
-                    type(exc).__name__,
-                    exc,
-                    mn_text[:120],
+                    i, total, type(exc).__name__, exc, mn_text[:120],
                 )
                 audio_b64, audio_ms = "", 0
+            return i, mn_text, audio_b64, audio_ms
 
-            # Log what we're SENDING back for this segment (omit the heavy b64 blob).
-            logger.debug(
-                "/process → segment %d/%d: offset=%.2f dur=%.2f audio_ms=%d translated=%r",
-                i,
-                total,
-                seg.start,
-                seg.duration,
-                audio_ms,
-                mn_text[:80],
-            )
-
-            yield _sse(
-                {
-                    "index": i,
-                    "total": total,
-                    "segment": {
-                        "offset": seg.start,
-                        "duration": seg.duration,
-                        "text": seg.text,
-                        "translated_text": mn_text,
-                        "audio_b64": audio_b64,
-                        "audio_ms": audio_ms,
-                    },
-                }
-            )
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            futures = {pool.submit(_tts_one, i): i for i in range(total)}
+            for future in as_completed(futures):
+                i, mn_text, audio_b64, audio_ms = future.result()
+                if not audio_b64:
+                    tts_failures += 1
+                seg = segments_in[i]
+                logger.debug(
+                    "/process → segment %d/%d: offset=%.2f dur=%.2f audio_ms=%d translated=%r",
+                    i, total, seg.start, seg.duration, audio_ms, mn_text[:80],
+                )
+                yield _sse(
+                    {
+                        "index": i,
+                        "total": total,
+                        "segment": {
+                            "offset": seg.start,
+                            "duration": seg.duration,
+                            "text": seg.text,
+                            "translated_text": mn_text,
+                            "audio_b64": audio_b64,
+                            "audio_ms": audio_ms,
+                        },
+                    }
+                )
 
         logger.info(
             "/process → done: %d segments streamed, %d TTS failures (video_id=%s)",
