@@ -18,6 +18,7 @@ import { ScholarOverlay } from "@/_comps/dashboard/ScholarOverlay";
 import { DashboardHeader } from "@/_comps/dashboard/DashboardHeader";
 import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
 import { VideoPane } from "@/_comps/dashboard/VideoPane";
+import { SubtitlePane } from "@/_comps/dashboard/SubtitlePane";
 import SearchResults from "@/_comps/youtube-search/SearchResults";
 import { fetchYouTubeResults } from "@/_comps/youtube-search/api";
 import {
@@ -564,6 +565,16 @@ export default function DashboardView({
           title={activeItem?.title ?? "Choose a YouTube video"}
           speaker={activeItem?.speaker ?? ""}
           sourceLine={!videoId ? "NO VIDEO SELECTED" : undefined}
+          subtitle={
+            videoId ? (
+              <SubtitlePane
+                segments={processedSegments}
+                currentTime={player.time}
+                loading={processingLoading}
+                error={processingError}
+              />
+            ) : null
+          }
         />
         {notesCollapsed ? (
           <RecommendedVideos
