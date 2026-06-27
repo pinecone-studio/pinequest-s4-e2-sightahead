@@ -18,6 +18,7 @@ import { ScholarOverlay } from "@/_comps/dashboard/ScholarOverlay";
 import { DashboardHeader } from "@/_comps/dashboard/DashboardHeader";
 import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
 import { VideoPane } from "@/_comps/dashboard/VideoPane";
+import { SubtitlePane } from "@/_comps/dashboard/SubtitlePane";
 import SearchResults from "@/_comps/youtube-search/SearchResults";
 import { fetchYouTubeResults } from "@/_comps/youtube-search/api";
 import {
@@ -57,6 +58,9 @@ type DashboardViewProps = {
   onLogout?: () => void;
 };
 
+// ── Mappers: backend records → view models used by this screen ──────────────
+
+// Backend note record → UI note (ms timestamp → whole seconds).
 function toNote(record: NoteRecord): Note {
   return {
     id: record.id,
@@ -65,6 +69,7 @@ function toNote(record: NoteRecord): Note {
   };
 }
 
+// Backend watch-history record → UI history item (computes watched progress 0–1).
 function toHistoryItem(record: VideoHistoryRecord): HistoryItem {
   const durationSeconds = record.duration_seconds;
   const watchedPositionSeconds = Math.floor(record.last_position_ms / 1000);
@@ -86,6 +91,7 @@ function toHistoryItem(record: VideoHistoryRecord): HistoryItem {
   };
 }
 
+// "1:02:03" duration label → total seconds.
 function parseDurationSeconds(value: string) {
   const parts = value
     .split(":")
@@ -96,6 +102,7 @@ function parseDurationSeconds(value: string) {
   return parts.reduce((total, part) => total * 60 + part, 0);
 }
 
+// YouTube search result → the lightweight selection this screen passes around.
 function selectionFromResult(
   item: YouTubeVideoSearchResult,
 ): DashboardVideoSelection {
@@ -108,6 +115,7 @@ function selectionFromResult(
   };
 }
 
+// Placeholder history item for a just-selected video not yet in saved history.
 function historyItemFromSelection(
   videoId: string,
   selection?: DashboardVideoSelection | null,
@@ -123,6 +131,7 @@ function historyItemFromSelection(
   };
 }
 
+// Builds the POST body for saving watch progress (current time → ms, completed flag).
 function historyPayload(
   videoId: string,
   videoUrl: string,
@@ -148,6 +157,7 @@ function historyPayload(
   };
 }
 
+// Derives a search query (title + speaker) used to fetch "recommended" videos.
 function recommendationQuery(item: HistoryItem | null) {
   if (!item) return "";
 
@@ -155,6 +165,9 @@ function recommendationQuery(item: HistoryItem | null) {
   return [title, item.speaker].filter(Boolean).join(" ").slice(0, 110);
 }
 
+// Main watch screen: YouTube player + live captions, plus notes, watch history,
+// search and recommendations. Composed of smaller panes (VideoPane, NotesPane,
+// HistoryRail, SubtitlePane); this component owns the shared state and handlers.
 export default function DashboardView({
   videoUrl,
   selectedVideo,
@@ -162,6 +175,7 @@ export default function DashboardView({
   onSearch,
   onLogout,
 }: DashboardViewProps) {
+  // The 11-char id parsed from the incoming URL — drives captions, notes, history.
   const videoId = useMemo(() => getYouTubeVideoId(videoUrl) ?? "", [videoUrl]);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -185,6 +199,7 @@ export default function DashboardView({
   const [recommendationsError, setRecommendationsError] = useState("");
   const playbackRef = useRef({ time: 0, duration: 0 });
 
+  // Fetch the user's saved watch history from the backend.
   const reloadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError("");
@@ -200,6 +215,7 @@ export default function DashboardView({
     }
   }, []);
 
+  // Insert/replace one history record and move it to the top of the rail.
   const upsertHistoryRecord = useCallback((record: VideoHistoryRecord) => {
     const item = toHistoryItem(record);
     setHistoryItems((previous) => {
@@ -211,10 +227,12 @@ export default function DashboardView({
     });
   }, []);
 
+  // Load watch history once on mount.
   useEffect(() => {
     void Promise.resolve().then(reloadHistory);
   }, [reloadHistory]);
 
+  // Load this video's notes whenever the selected video changes.
   useEffect(() => {
     if (!videoId) {
       queueMicrotask(() => setNotes([]));
@@ -238,6 +256,8 @@ export default function DashboardView({
     };
   }, [videoId]);
 
+  // Resolve the "active" video metadata: prefer the saved history record, else a
+  // placeholder from the current selection so the UI has a title/duration to show.
   const currentHistoryItem = historyItems.find((item) => item.id === videoId);
   const fallbackItem = videoId
     ? historyItemFromSelection(videoId, selectedVideo)
@@ -254,8 +274,8 @@ export default function DashboardView({
   }, [fallbackItem, historyItems]);
   const segmentDuration = activeItem?.durationSeconds ?? FALLBACK_DURATION;
   const player = useYouTubePlayer(videoId, segmentDuration);
-  // Calls POST /process whenever a video is selected (videoId changes).
-  // `segments` is the translated transcript — displaying it is the next step.
+  // Fetches captions for the selected video (Path A, client-side) and exposes
+  // them as `processedSegments` for the SubtitlePane to render.
   const {
     segments: processedSegments,
     loading: processingLoading,
@@ -302,15 +322,17 @@ export default function DashboardView({
     playbackRef.current = { time: player.time, duration: player.duration };
   }, [player.duration, player.time]);
 
-  // Track the /process lifecycle in the console.
+  // Log the caption-fetch lifecycle for the selected video.
   useEffect(() => {
     if (processingError) {
-      console.warn("processing failed:", processingError);
+      console.warn("caption fetch failed:", processingError);
     } else if (!processingLoading && processedSegments.length) {
-      console.log(`/process done: ${processedSegments.length} segments for ${videoId}`);
+      console.log(`captions loaded: ${processedSegments.length} segments for ${videoId}`);
     }
   }, [processedSegments, processingLoading, processingError, videoId]);
 
+  // Persist the current playback position to watch history (called on a timer,
+  // on unmount, and after adding a note).
   const savePlayback = useCallback(async () => {
     if (!videoId) return;
     const { time, duration } = playbackRef.current;
@@ -327,6 +349,7 @@ export default function DashboardView({
     }
   }, [selectedVideo, upsertHistoryRecord, videoId, videoUrl]);
 
+  // Bump the note badge count on the matching history item (optimistic update).
   const incrementHistoryNoteCount = useCallback(
     (savedVideoId: string) => {
       setHistoryLoading(false);
@@ -346,6 +369,7 @@ export default function DashboardView({
     [activeItem],
   );
 
+  // Save playback now, then every 15s, and once more on cleanup.
   useEffect(() => {
     if (!videoId) return;
     void savePlayback();
@@ -359,6 +383,7 @@ export default function DashboardView({
     };
   }, [savePlayback, videoId]);
 
+  // Create a note at the current playback time and update local state/history.
   async function addNote() {
     if (!videoId) return;
     const text = draft.trim();
@@ -381,6 +406,7 @@ export default function DashboardView({
     }
   }
 
+  // Switch to a video picked from the history rail.
   function selectHistory(item: HistoryItem) {
     setSummaryOpen(false);
     setSearchResults([]);
@@ -396,6 +422,7 @@ export default function DashboardView({
     });
   }
 
+  // Switch to a video picked from the search results panel.
   function selectSearchResult(item: YouTubeSearchResult) {
     if (!isVideoResult(item)) return;
     const selection = selectionFromResult(item);
@@ -407,6 +434,7 @@ export default function DashboardView({
     onSearch?.(selection.url, selection);
   }
 
+  // Switch to a video picked from the recommendations rail.
   function selectRecommendedVideo(item: YouTubeVideoSearchResult) {
     if (item.videoId === videoId) return;
     const selection = selectionFromResult(item);
@@ -422,6 +450,7 @@ export default function DashboardView({
       return;
     }
 
+    // Fetch recommendations (only when the notes pane is collapsed to make room).
     let active = true;
     const controller = new AbortController();
 
@@ -471,6 +500,8 @@ export default function DashboardView({
     };
   }, [notesCollapsed, recommendationSearchQuery, videoId]);
 
+  // Handle the header search box: a pasted URL jumps straight to that video,
+  // otherwise run a YouTube search and show the results panel.
   async function submitSearch() {
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -512,6 +543,8 @@ export default function DashboardView({
     }
   }
 
+  // Layout: header + optional search panel on top; below, a 3-column row of
+  // history rail | video+subtitles | notes (or recommendations when collapsed).
   return (
     <div className="dashboard-app-shell">
       <AmbientBackground />
@@ -564,6 +597,16 @@ export default function DashboardView({
           title={activeItem?.title ?? "Choose a YouTube video"}
           speaker={activeItem?.speaker ?? ""}
           sourceLine={!videoId ? "NO VIDEO SELECTED" : undefined}
+          subtitle={
+            videoId ? (
+              <SubtitlePane
+                segments={processedSegments}
+                currentTime={player.time}
+                loading={processingLoading}
+                error={processingError}
+              />
+            ) : null
+          }
         />
         {notesCollapsed ? (
           <RecommendedVideos

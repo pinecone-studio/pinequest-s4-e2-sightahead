@@ -1,6 +1,6 @@
 "use client"
 
-import type { RefObject } from "react"
+import type { ReactNode, RefObject } from "react"
 import { SOURCE_LINE, type Note } from "./data"
 import { VideoFrame } from "./VideoFrame"
 
@@ -12,11 +12,11 @@ type VideoPaneProps = {
   title: string
   speaker: string
   sourceLine?: string
+  subtitle?: ReactNode
 }
 
 export function VideoPane(props: VideoPaneProps) {
   const sortedNotes = [...props.notes].sort((a, b) => a.time - b.time)
-  if (SOURCE_LINE) {console.log(SOURCE_LINE)}
   return (
     <section className="dashboard-video-pane">
       <div className="dashboard-video-meta">
@@ -30,6 +30,7 @@ export function VideoPane(props: VideoPaneProps) {
         ready={props.ready}
         hasVideo={props.hasVideo}
       />
+      {props.subtitle}
       <div className="dashboard-saved-header">
         <span>ХАДГАЛСАН АГШИН</span>
         <span />

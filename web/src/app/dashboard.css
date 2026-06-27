@@ -454,6 +454,32 @@
 }
 
 /* ===== dashboard-paper.css ===== */
+.dashboard-subtitle-pane {
+  margin-top: 14px;
+  padding: 13px 20px;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 6px;
+  background: rgba(120, 80, 40, 0.22);
+  border: 1px solid rgba(128, 144, 118, 0.16);
+}
+
+.dashboard-subtitle-text {
+  margin: 0;
+  color: #f4eed6;
+  font: 500 17px/1.5 var(--font-onest), system-ui, sans-serif;
+}
+
+.dashboard-subtitle-status {
+  margin: 0;
+  color: #9dae92;
+  font: 11px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.12em;
+}
+
 .dashboard-saved-header {
   display: flex;
   align-items: center;

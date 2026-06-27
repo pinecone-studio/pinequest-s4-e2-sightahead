@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI
@@ -8,6 +9,13 @@ from app.config import get_settings, AUDIO_DIR
 from app.routers import auth, summary, video, voice, pipeline, translate
 from app.routers.tts import router as tts_router
 
+
+# Configure application logging so app loggers (e.g. the /process pipeline)
+# actually surface. Set LOG_LEVEL=DEBUG to see per-segment transcript logs.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
+)
 
 settings = get_settings()
 
