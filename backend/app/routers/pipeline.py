@@ -51,7 +51,27 @@ def _sse(obj: dict) -> str:
 @router.post("/process")
 async def process_video(request: ProcessRequest):
     segments_in = request.segments
+
+    # ── Log what the transcript route RECEIVED from the client ──────────
+    total_chars = sum(len(seg.text) for seg in segments_in)
+    logger.info(
+        "/process ← received transcript: video_id=%s source_lang=%s segments=%d chars=%d",
+        request.video_id,
+        request.source_lang,
+        len(segments_in),
+        total_chars,
+    )
+    if segments_in:
+        first = segments_in[0]
+        logger.debug(
+            "/process first segment: start=%.2f dur=%.2f text=%r",
+            first.start,
+            first.duration,
+            first.text[:120],
+        )
+
     if not segments_in:
+        logger.warning("/process ✗ rejected: no segments provided (video_id=%s)", request.video_id)
         raise HTTPException(
             status_code=400,
             detail="No segments provided. Send the client-fetched transcript in `segments`.",
@@ -61,26 +81,52 @@ async def process_video(request: ProcessRequest):
         total = len(segments_in)
 
         # 1. Batch-translate everything up front (few API calls), duration-aware.
-        logger.info("translating %d segments (lang=%s)", total, request.source_lang)
+        logger.info("/process translating %d segments (lang=%s)", total, request.source_lang)
         try:
             translations = translate_timed(
                 [(seg.text, seg.duration) for seg in segments_in], request.source_lang
             )
+            logger.info("/process translation ok: %d translations returned", len(translations))
         except Exception as exc:  # noqa: BLE001
-            logger.exception("translation failed")
-            yield _sse({"error": f"translation failed: {exc}"})
+            logger.exception(
+                "/process ✗ translation failed (video_id=%s, segments=%d)",
+                request.video_id,
+                total,
+            )
+            # Detailed, typed error back to the client over SSE.
+            yield _sse({"error": f"translation failed: {type(exc).__name__}: {exc}"})
             return
 
         # 2. TTS per segment, streaming each one back as soon as it's ready.
+        tts_failures = 0
         for i, seg in enumerate(segments_in):
             mn_text = translations[i] if i < len(translations) else seg.text
             try:
                 audio_bytes = synthesize(mn_text)
                 audio_ms = audio_duration_ms_from_bytes(audio_bytes)
                 audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-            except Exception:  # noqa: BLE001
-                logger.exception("TTS failed for segment %d", i)
+            except Exception as exc:  # noqa: BLE001
+                tts_failures += 1
+                logger.exception(
+                    "/process ✗ TTS failed for segment %d/%d (%s: %s) text=%r",
+                    i,
+                    total,
+                    type(exc).__name__,
+                    exc,
+                    mn_text[:120],
+                )
                 audio_b64, audio_ms = "", 0
+
+            # Log what we're SENDING back for this segment (omit the heavy b64 blob).
+            logger.debug(
+                "/process → segment %d/%d: offset=%.2f dur=%.2f audio_ms=%d translated=%r",
+                i,
+                total,
+                seg.start,
+                seg.duration,
+                audio_ms,
+                mn_text[:80],
+            )
 
             yield _sse(
                 {
@@ -97,6 +143,12 @@ async def process_video(request: ProcessRequest):
                 }
             )
 
+        logger.info(
+            "/process → done: %d segments streamed, %d TTS failures (video_id=%s)",
+            total,
+            tts_failures,
+            request.video_id,
+        )
         yield _sse({"done": True, "total": total})
 
     return StreamingResponse(

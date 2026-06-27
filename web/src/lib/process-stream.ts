@@ -33,12 +33,34 @@ function backendUrl(path: string): string {
 
 // Fetches the transcript from our own Vercel API route (same-origin, no CORS).
 export async function fetchTranscript(videoId: string): Promise<TranscriptResponse> {
+  console.log("[fetchTranscript] → requesting transcript", { videoId });
+  const startedAt = Date.now();
+
   const res = await fetch(`/api/youtube/transcript?videoId=${encodeURIComponent(videoId)}`);
+
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error || "Transcript fetch failed.");
+    const body = (await res.json().catch(() => null)) as
+      | { error?: string; detail?: string }
+      | null;
+    console.error("[fetchTranscript] ✗ request failed", {
+      videoId,
+      status: res.status,
+      statusText: res.statusText,
+      tookMs: Date.now() - startedAt,
+      error: body?.error,
+      detail: body?.detail,
+    });
+    throw new Error(body?.error || `Transcript fetch failed (${res.status}).`);
   }
-  return res.json();
+
+  const data = (await res.json()) as TranscriptResponse;
+  console.log("[fetchTranscript] ← transcript received", {
+    videoId,
+    sourceLang: data.source_lang,
+    segmentCount: data.segments?.length ?? 0,
+    tookMs: Date.now() - startedAt,
+  });
+  return data;
 }
 
 // POSTs the segments to the backend and consumes the SSE stream, invoking
@@ -48,7 +70,15 @@ export async function streamProcess(
   handlers: StreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(backendUrl("/process"), {
+  const url = backendUrl("/process");
+  console.log("[streamProcess] → sending transcript to backend", {
+    url,
+    sourceLang: payload.source_lang,
+    segmentCount: payload.segments.length,
+    totalChars: payload.segments.reduce((n, s) => n + s.text.length, 0),
+  });
+
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -58,8 +88,19 @@ export async function streamProcess(
 
   if (!response.ok || !response.body) {
     const detail = await response.text().catch(() => "");
+    console.error("[streamProcess] ✗ backend rejected request", {
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      hasBody: !!response.body,
+      detail,
+    });
     throw new Error(detail || `Process failed (${response.status}).`);
   }
+
+  console.log("[streamProcess] ← stream opened, reading segments", {
+    status: response.status,
+  });
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -77,13 +118,31 @@ export async function streamProcess(
       const line = part.replace(/^data: /, "").trim();
       if (!line) continue;
 
-      const msg = JSON.parse(line);
+      let msg: {
+        error?: string;
+        done?: boolean;
+        total?: number;
+        index?: number;
+        segment?: StreamedSegment;
+      };
+      try {
+        msg = JSON.parse(line);
+      } catch (err) {
+        console.error("[streamProcess] ✗ failed to parse SSE line", {
+          line: line.slice(0, 500),
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue; // skip the bad frame rather than killing the whole stream
+      }
+
       if (msg.error) {
+        console.error("[streamProcess] ✗ backend reported error", { error: msg.error });
         handlers.onError?.(msg.error);
       } else if (msg.done) {
-        handlers.onDone?.(msg.total);
-      } else {
-        handlers.onSegment(msg.segment, msg.index, msg.total);
+        console.log("[streamProcess] ← stream done", { total: msg.total });
+        handlers.onDone?.(msg.total ?? 0);
+      } else if (msg.segment) {
+        handlers.onSegment(msg.segment, msg.index ?? 0, msg.total ?? 0);
       }
     }
   }
