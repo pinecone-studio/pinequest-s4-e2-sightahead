@@ -252,12 +252,12 @@ export async function createVideoNote(
   return response.json();
 }
 
-export async function processVideo(videoId: string): Promise<ProcessResult> {
+export async function processVideo(videoId: string, gender: "male" | "female" = "male"): Promise<ProcessResult> {
   const response = await authFetch(`/process`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ video_id: videoId }),
+    body: JSON.stringify({ video_id: videoId, gender }),
   });
 
   if (!response.ok) {

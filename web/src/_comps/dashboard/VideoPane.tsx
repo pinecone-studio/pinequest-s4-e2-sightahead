@@ -3,6 +3,7 @@
 import type { RefObject } from "react"
 import { SOURCE_LINE, type Note } from "./data"
 import { VideoFrame } from "./VideoFrame"
+import type { DubStep } from "./useDubAudio"
 
 type VideoPaneProps = {
   containerRef: RefObject<HTMLDivElement | null>
@@ -12,10 +13,32 @@ type VideoPaneProps = {
   title: string
   speaker: string
   sourceLine?: string
+  dubMode?: "mongolian" | "original"
+  dubStatus?: DubStep
+  dubProgress?: { done: number; total: number } | null
+  dubError?: string | null
+  voiceGender?: "male" | "female"
+  onToggleDub?: () => void
+  onToggleGender?: () => void
+}
+
+function statusText(status: DubStep | undefined, progress: { done: number; total: number } | null | undefined): string {
+  if (!status) return ""
+  if (status === "translating") {
+    return progress ? `OpenAI орчуулж байна... ${progress.done}/${progress.total}` : "OpenAI орчуулж байна..."
+  }
+  if (status === "tts") {
+    return progress ? `Azure TTS дуб үүсгэж байна... ${progress.done}/${progress.total}` : "Azure TTS дуб үүсгэж байна..."
+  }
+  if (status === "ready") return "✓ Монгол дуб бэлэн болсон"
+  return ""
 }
 
 export function VideoPane(props: VideoPaneProps) {
   const sortedNotes = [...props.notes].sort((a, b) => a.time - b.time)
+  const isLoading = props.dubStatus === "translating" || props.dubStatus === "tts"
+  const isMongolian = props.dubMode === "mongolian"
+  const dubStatusText = statusText(props.dubStatus, props.dubProgress)
 
   return (
     <section className="dashboard-video-pane">
@@ -30,6 +53,42 @@ export function VideoPane(props: VideoPaneProps) {
         ready={props.ready}
         hasVideo={props.hasVideo}
       />
+      {props.hasVideo && props.onToggleDub && (
+        <div className="dashboard-dub-toggle">
+          <button
+            onClick={props.onToggleDub}
+            disabled={isLoading}
+            className={`dashboard-dub-btn${isMongolian ? " active" : ""}`}
+          >
+            {isLoading
+              ? "Бэлдэж байна..."
+              : isMongolian
+              ? "🔊 Монгол дуб"
+              : "▶ Эх бичлэг"}
+          </button>
+
+          {isMongolian && props.onToggleGender && (
+            <button
+              onClick={props.onToggleGender}
+              disabled={isLoading}
+              className="dashboard-dub-btn"
+              title="Хоолой солих"
+            >
+              {props.voiceGender === "male" ? "♂ Эрэгтэй" : "♀ Эмэгтэй"}
+            </button>
+          )}
+
+          {dubStatusText && (
+            <span className="dashboard-dub-status">
+              {dubStatusText}
+            </span>
+          )}
+
+          {props.dubError && (
+            <span className="dashboard-dub-error">{props.dubError}</span>
+          )}
+        </div>
+      )}
       <div className="dashboard-saved-header">
         <span>ХАДГАЛСАН АГШИН</span>
         <span />

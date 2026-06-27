@@ -14,6 +14,7 @@ import { RecommendedVideos } from "@/_comps/dashboard/RecommendedVideos";
 import { ScholarOverlay } from "@/_comps/dashboard/ScholarOverlay";
 import { DashboardHeader } from "@/_comps/dashboard/DashboardHeader";
 import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
+import { useDubAudio } from "@/_comps/dashboard/useDubAudio";
 import { VideoPane } from "@/_comps/dashboard/VideoPane";
 import SearchResults from "@/_comps/youtube-search/SearchResults";
 import { fetchYouTubeResults } from "@/_comps/youtube-search/api";
@@ -159,6 +160,8 @@ export default function DashboardView({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [dubMode, setDubMode] = useState<"mongolian" | "original">("original");
+  const [voiceGender, setVoiceGender] = useState<"male" | "female">("male");
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<YouTubeSearchResult[]>([]);
@@ -229,6 +232,7 @@ export default function DashboardView({
   }, [fallbackItem, historyItems]);
   const segmentDuration = activeItem?.durationSeconds ?? FALLBACK_DURATION;
   const player = useYouTubePlayer(videoId, segmentDuration);
+  const dub = useDubAudio(videoId, player.time, dubMode === "mongolian", voiceGender);
   const reply = useMemo(() => buildScholarReply(notes), [notes]);
   const recommendationSearchQuery = useMemo(() => recommendationQuery(activeItem), [activeItem]);
   const searchCounts = useMemo(
@@ -260,6 +264,14 @@ export default function DashboardView({
   useEffect(() => {
     playbackRef.current = { time: player.time, duration: player.duration };
   }, [player.duration, player.time]);
+
+  useEffect(() => {
+    if (dubMode === "mongolian") {
+      player.mute();
+    } else {
+      player.unMute();
+    }
+  }, [dubMode, player.mute, player.unMute]);
 
   const savePlayback = useCallback(async () => {
     if (!videoId) return;
@@ -491,6 +503,13 @@ export default function DashboardView({
           title={activeItem?.title ?? "Choose a YouTube video"}
           speaker={activeItem?.speaker ?? ""}
           sourceLine={!videoId ? "NO VIDEO SELECTED" : undefined}
+          dubMode={dubMode}
+          dubStatus={dub.step}
+          dubProgress={dub.progress}
+          dubError={dub.error}
+          voiceGender={voiceGender}
+          onToggleDub={() => setDubMode((m) => (m === "mongolian" ? "original" : "mongolian"))}
+          onToggleGender={() => setVoiceGender((g) => (g === "male" ? "female" : "male"))}
         />
         {notesCollapsed ? (
           <RecommendedVideos

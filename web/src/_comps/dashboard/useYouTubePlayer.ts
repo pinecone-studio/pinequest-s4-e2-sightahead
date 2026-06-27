@@ -78,8 +78,10 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
     playerRef.current?.seekTo?.(value, true)
     setTime(value)
   }, [])
+  const mute = useCallback(() => playerRef.current?.mute?.(), [])
+  const unMute = useCallback(() => playerRef.current?.unMute?.(), [])
 
-  return { containerRef, ready, playing, time, duration, play, pause, toggle, seek }
+  return { containerRef, ready, playing, time, duration, play, pause, toggle, seek, mute, unMute }
 }
 
 function styleIframe(iframe?: HTMLIFrameElement) {
