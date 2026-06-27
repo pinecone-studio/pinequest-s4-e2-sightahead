@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react"
 import { fetchTranscript, streamProcess, base64ToBlobUrl, type StreamedSegment } from "@/lib/process-stream"
+import type { Segment } from "@/lib/backend-api"
 
 export type DubStep = "idle" | "fetching" | "translating" | "tts" | "ready" | "error"
 
 type DubSegment = {
   start: number
   duration: number
+  translatedText: string | null
   blobUrl: string | null
 }
 
@@ -70,10 +72,13 @@ export function useDubAudio(
         const built: DubSegment[] = transcript.segments.map((s) => ({
           start: s.start,
           duration: s.duration,
+          translatedText: null,
           blobUrl: null,
         }))
         setStep("translating")
         setProgress({ done: 0, total })
+
+        let ttsCompleted = 0
 
         await streamProcess(
           { source_lang: transcript.source_lang, segments: transcript.segments, gender },
@@ -82,14 +87,25 @@ export function useDubAudio(
               if (controller.signal.aborted) return
               const blobUrl = seg.audio_b64 ? base64ToBlobUrl(seg.audio_b64) : null
               if (blobUrl) blobUrlsRef.current.push(blobUrl)
-              built[index] = { start: seg.offset, duration: seg.duration, blobUrl }
+              ttsCompleted++
+              built[index] = {
+                start: seg.offset,
+                duration: seg.duration,
+                translatedText: seg.translated_text ?? null,
+                blobUrl,
+              }
               setSegments([...built])
-              setProgress({ done: index + 1, total: segTotal })
+              setProgress({ done: ttsCompleted, total: segTotal })
               if (index === 0) setStep("tts")
             },
             onDone: () => {
               if (controller.signal.aborted) return
-              setStep("ready")
+              if (blobUrlsRef.current.length === 0) {
+                setError("Azure TTS audio үүсгэж чадсангүй. Backend credentials шалгана уу.")
+                setStep("error")
+              } else {
+                setStep("ready")
+              }
               setProgress(null)
             },
             onError: (msg: string) => {
@@ -136,7 +152,7 @@ export function useDubAudio(
     if (audioRef.current) audioRef.current.playbackRate = playbackRate
   }, [playbackRate])
 
-  // Sync audio to video playback time — runs every 250ms via currentTime
+  // Sync audio to video playback time
   useEffect(() => {
     if (!enabled || segments.length === 0) return
 
@@ -144,32 +160,51 @@ export function useDubAudio(
       (s) => currentTime >= s.start && currentTime < s.start + s.duration,
     )
 
-    if (idx === -1) {
-      audioRef.current?.pause()
-      return
-    }
+    // Between subtitle windows: let current audio finish, don't interrupt
+    if (idx === -1) return
 
-    if (idx === activeIdxRef.current && audioRef.current) {
-      const expected = currentTime - segments[idx].start
-      if (Math.abs(audioRef.current.currentTime - expected) > 0.5) {
-        audioRef.current.currentTime = expected
+    if (idx === activeIdxRef.current) {
+      // Same segment — audio is already playing or segment has no audio; either way do nothing
+      if (!audioRef.current) {
+        const seg = segments[idx]
+        if (!seg.blobUrl) return
+        const audio = new Audio(seg.blobUrl)
+        audio.currentTime = 0
+        audio.playbackRate = playbackRate
+        audioRef.current = audio
+        audio.play().catch((e) => console.warn("[DubAudio] play() blocked:", e))
       }
       return
     }
 
+    // New segment — stop previous and start fresh
     audioRef.current?.pause()
     audioRef.current = null
+    activeIdxRef.current = idx
 
     const seg = segments[idx]
-    activeIdxRef.current = idx
     if (!seg.blobUrl) return
 
     const audio = new Audio(seg.blobUrl)
-    audio.currentTime = Math.max(0, currentTime - seg.start)
+    audio.currentTime = 0
     audio.playbackRate = playbackRate
     audioRef.current = audio
-    audio.play().catch(() => {})
+    audio.play().catch((e) => console.warn("[DubAudio] play() blocked:", e))
   }, [currentTime, segments, enabled])
 
-  return { step, error, progress, segmentCount: segments.length }
+  // Build translated segments for SubtitlePane when dub mode is active
+  const translatedSegments: Segment[] = segments
+    .filter((s) => s.translatedText !== null)
+    .map((s) => ({
+      start: s.start,
+      duration: s.duration,
+      text: s.translatedText!,
+      source: "youtube_captions" as const,
+      translated_text: s.translatedText,
+      audio_path: null,
+      audio_ms: null,
+      audio_b64: null,
+    }))
+
+  return { step, error, progress, segmentCount: segments.length, translatedSegments }
 }

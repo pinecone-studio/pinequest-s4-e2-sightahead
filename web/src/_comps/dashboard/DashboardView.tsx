@@ -344,6 +344,15 @@ export default function DashboardView({
     }
   }, [processedSegments, processingLoading, processingError, videoId]);
 
+  // Unlock browser autoplay gate on first user interaction, then toggle dub.
+  const handleToggleDub = useCallback(() => {
+    try {
+      const ctx: AudioContext = new ((window as any).AudioContext ?? (window as any).webkitAudioContext)()
+      void ctx.resume().then(() => ctx.close())
+    } catch {}
+    setDubMode((m) => (m === "mongolian" ? "original" : "mongolian"))
+  }, [])
+
   // Persist the current playback position to watch history (called on a timer,
   // on unmount, and after adding a note).
   const savePlayback = useCallback(async () => {
@@ -623,7 +632,11 @@ export default function DashboardView({
           subtitle={
             videoId ? (
               <SubtitlePane
-                segments={processedSegments}
+                segments={
+                  dubMode === "mongolian" && dub.translatedSegments.length > 0
+                    ? dub.translatedSegments
+                    : processedSegments
+                }
                 currentTime={player.time}
                 loading={processingLoading}
                 error={processingError}
@@ -635,7 +648,7 @@ export default function DashboardView({
           dubProgress={dub.progress}
           dubError={dub.error}
           voiceGender={voiceGender}
-          onToggleDub={() => setDubMode((m) => (m === "mongolian" ? "original" : "mongolian"))}
+          onToggleDub={handleToggleDub}
           onToggleGender={() => setVoiceGender((g) => (g === "male" ? "female" : "male"))}
         />
         {notesCollapsed ? (
