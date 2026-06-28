@@ -1,17 +1,45 @@
 # SightAhead Chrome Extension
 
-YouTube video dubbing into Mongolian — fetches captions client-side (no bot detection), sends to backend for translation + TTS.
+Live Mongolian subtitles for YouTube. Instead of fetching caption tracks
+(brittle, blocked from datacenter IPs), it **reads the captions YouTube
+already paints on screen** with a `MutationObserver`, translates each line
+through the backend, and overlays the Mongolian.
 
 ## Setup (takes 30 seconds)
 
 1. Open Chrome → navigate to `chrome://extensions/`
 2. Toggle **Developer mode** (top right corner)
 3. Click **Load unpacked** → select this folder
-4. Open any YouTube video → you should see a "🎙 Dub to Mongolian" button
+4. Open any YouTube video → you should see a "🇲🇳 Монгол хадмал: OFF" button.
+   Click it to turn on live translated subtitles.
 
-## Before it works end-to-end
+## How the live-subtitle flow works
 
-Edit `background.js` line 16 — replace `BACKEND_URL` with your actual Render backend URL.
+1. `content.js` ensures YouTube captions are on, then observes the player
+   for changes to `.ytp-caption-segment` nodes.
+2. Each line is debounced (so rolling auto-captions settle), deduped, and
+   sent to `background.js`.
+3. `background.js` POSTs it to the backend `POST /translate`
+   (`{ text, source_lang, target_lang }` → `{ translated }`), caching repeats.
+4. `content.js` paints the Mongolian into an overlay inside the player
+   (visible in fullscreen). Native English captions are hidden via CSS.
+
+**Tradeoff:** this is a live read, so the Mongolian line lands a beat after
+the caption appears (one translation round-trip). No video plays ahead /
+pre-buffering is done — keep `SETTLE_MS` low for snappier, higher for fewer
+calls on word-by-word auto-captions.
+
+## Configuration
+
+- `background.js` `BACKEND_URL` — your backend origin. The same value must be
+  listed in `manifest.json` `host_permissions` (so the worker can fetch it
+  without CORS). Both the Render URL and `localhost:8000` are pre-listed.
+
+## Dubbing (separate, legacy flow)
+
+The "dub" path (`FETCH_CAPTIONS` / `TRANSLATE_AND_DUB` in `background.js`,
+`/api/dub` on the backend) still exists but relies on caption-track scraping.
+The live-subtitle flow above is the recommended path.
 
 Your backend needs a `POST /api/dub` endpoint that accepts:
 ```json

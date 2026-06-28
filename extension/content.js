@@ -1,49 +1,52 @@
 // ============================================================
 // content.js — Runs INSIDE the YouTube tab
 // ============================================================
-// Chrome injects this into every page matching the "matches"
-// pattern in manifest.json ("*://www.youtube.com/watch*").
+// Live Mongolian subtitles WITHOUT fetching YouTube's caption
+// tracks. Instead we read the captions YouTube already paints on
+// screen (.ytp-caption-segment) via a MutationObserver, translate
+// each settled line through our backend, and draw the Mongolian
+// into our own overlay.
 //
-// WHAT IT CAN DO:
-// - Read/modify the YouTube page DOM (inject buttons, overlays)
-// - Read window.location to get the video ID
-// - Send messages to background.js and receive responses
+// Why this beats caption-track fetching:
+//   - No timedtext / ytInitialPlayerResponse scraping (brittle,
+//     breaks on YouTube changes, blocked from datacenter IPs).
+//   - Works for any video whose captions render on screen, incl.
+//     auto-generated ones.
+//   - The only network call is to OUR backend, from the user's IP.
 //
-// WHAT IT CAN'T DO:
-// - Access YouTube's JavaScript variables (isolated world)
-// - Make CORS-free fetches (that's background.js's job)
+// Tradeoff: it's a LIVE read, so the Mongalian line lands a beat
+// after the caption appears (translation round-trip). We debounce
+// so rolling auto-captions settle into a full line first.
 // ============================================================
+
+// ── CONFIG ──────────────────────────────────────────────────
+const SETTLE_MS = 450; // wait for the caption line to stop changing before translating
 
 // ── STATE ───────────────────────────────────────────────────
 let currentVideoId = null;
-let isProcessing = false;
-let dubButton = null;
-let activeAudio = null;        // the currently playing dub <Audio>
-let audioListeners = null;     // AbortController to detach video sync listeners
-let segmentTimers = [];        // setTimeout IDs for per-segment audio scheduling
+let enabled = false; // is the translated-subtitle overlay turned on?
+let toggleButton = null;
+let overlayEl = null; // our injected Mongolian subtitle div
+let captionObserver = null; // watches the player for caption changes
+let settleTimer = null; // debounce timer for a settling caption line
+let lastSourceText = ""; // dedup guard — the last English line we acted on
+let translateSeq = 0; // guards against out-of-order translation responses
 
 // ── INITIALIZATION ──────────────────────────────────────────
-// YouTube is a Single Page App (SPA). When you click a new video,
-// the URL changes but the page doesn't fully reload — so our
-// content script doesn't re-run. We need to watch for URL changes.
-
+// YouTube is a Single Page App: clicking a new video changes the
+// URL without reloading, so content.js does not re-run. Watch for it.
 function init() {
   console.log("[SightAhead] Content script loaded");
-  injectDubButton();
+  currentVideoId = extractVideoId();
+  injectToggleButton();
   watchForNavigation();
 }
 
-// YouTube's SPA navigation: the URL changes without a page reload.
-// We use a MutationObserver on the <title> element as a reliable
-// signal that the video changed (YouTube updates the title on navigation).
 function watchForNavigation() {
   let lastUrl = location.href;
-
-  // Check periodically — simplest reliable approach
   setInterval(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      console.log("[SightAhead] Navigation detected:", lastUrl);
       onVideoChanged();
     }
   }, 1000);
@@ -53,138 +56,165 @@ function onVideoChanged() {
   const videoId = extractVideoId();
   if (videoId && videoId !== currentVideoId) {
     currentVideoId = videoId;
-    resetUI();
-    // YouTube may have re-rendered the actions bar and dropped our button.
-    if (!document.getElementById("sightahead-dub-btn")) {
-      injectDubButton();
-    }
     console.log("[SightAhead] New video:", currentVideoId);
+    // New player DOM — drop stale state and re-arm if we were on.
+    lastSourceText = "";
+    setOverlayText("");
+    if (enabled) startObserving();
+    if (!document.getElementById("sightahead-sub-btn")) injectToggleButton();
   }
 }
 
 // ── VIDEO ID EXTRACTION ─────────────────────────────────────
 function extractVideoId() {
-  const url = new URL(window.location.href);
-  return url.searchParams.get("v"); // youtube.com/watch?v=THIS_PART
+  return new URL(window.location.href).searchParams.get("v");
 }
 
-// ── UI: INJECT THE DUB BUTTON ───────────────────────────────
-// We inject a button into YouTube's page, next to the like/share buttons.
-// This is the main user interaction point.
-
-function injectDubButton() {
-  // Wait for YouTube's UI to load (it's an SPA, elements load async).
-  // Give up after ~30s so we don't poll forever on pages without the bar.
+// ── UI: TOGGLE BUTTON ───────────────────────────────────────
+// Injected next to YouTube's like/share buttons. Turns the live
+// translated-subtitle overlay on and off.
+function injectToggleButton() {
   let attempts = 0;
   const maxAttempts = 60;
 
-  const waitForElement = setInterval(() => {
+  const wait = setInterval(() => {
     if (++attempts > maxAttempts) {
-      clearInterval(waitForElement);
+      clearInterval(wait);
       console.warn("[SightAhead] Actions bar not found; button not injected.");
       return;
     }
 
-    // This is the container for like/share/etc buttons below the video
-    const actionsBar = document.querySelector("#actions #top-level-buttons-computed")
-      || document.querySelector("#actions");
+    const actionsBar =
+      document.querySelector("#actions #top-level-buttons-computed") ||
+      document.querySelector("#actions");
+    if (!actionsBar) return;
 
-    if (actionsBar) {
-      clearInterval(waitForElement);
+    clearInterval(wait);
+    if (document.getElementById("sightahead-sub-btn")) return;
 
-      // Don't inject twice
-      if (document.getElementById("sightahead-dub-btn")) return;
-
-      dubButton = document.createElement("button");
-      dubButton.id = "sightahead-dub-btn";
-      dubButton.textContent = "🎙 Dub to Mongolian";
-      dubButton.className = "sightahead-btn";
-      dubButton.addEventListener("click", onDubClick);
-
-      actionsBar.appendChild(dubButton);
-      currentVideoId = extractVideoId();
-      console.log("[SightAhead] Button injected, video:", currentVideoId);
-    }
+    toggleButton = document.createElement("button");
+    toggleButton.id = "sightahead-sub-btn";
+    toggleButton.className = "sightahead-btn";
+    toggleButton.addEventListener("click", toggleSubtitles);
+    actionsBar.appendChild(toggleButton);
+    renderButton();
+    console.log("[SightAhead] Button injected, video:", currentVideoId);
   }, 500);
 }
 
-function resetUI() {
-  stopDubbedAudio();
-  if (dubButton) {
-    dubButton.textContent = "🎙 Dub to Mongolian";
-    dubButton.className = "sightahead-btn";
-    dubButton.disabled = false;
-  }
-  isProcessing = false;
+function renderButton(text) {
+  if (!toggleButton) return;
+  toggleButton.textContent =
+    text ?? (enabled ? "🇲🇳 Монгол хадмал: ON" : "🇲🇳 Монгол хадмал: OFF");
+  toggleButton.classList.toggle("sightahead-active", enabled);
 }
 
-// ── MAIN FLOW: THE DUB BUTTON CLICK ─────────────────────────
-// This orchestrates the full pipeline:
-// 1. Send videoId to background.js → it fetches captions
-// 2. Send captions to background.js → it calls your Render backend
-// 3. Receive audio URL → play it
+function toggleSubtitles() {
+  enabled = !enabled;
+  renderButton();
+  if (enabled) {
+    document.body.classList.add("sightahead-on"); // CSS hides native captions
+    ensureCaptionsOn();
+    startObserving();
+  } else {
+    document.body.classList.remove("sightahead-on");
+    stopObserving();
+    setOverlayText("");
+  }
+}
 
-async function onDubClick() {
-  if (isProcessing) return;
-  isProcessing = true;
+// ── CAPTION CAPTURE ─────────────────────────────────────────
+// Make sure YouTube is actually rendering captions — we need the
+// DOM nodes to exist before there is anything to read.
+function ensureCaptionsOn() {
+  const ccButton = document.querySelector(".ytp-subtitles-button");
+  if (ccButton && ccButton.getAttribute("aria-pressed") === "false") {
+    ccButton.click();
+    console.log("[SightAhead] Enabled captions automatically");
+  }
+}
 
-  const videoId = extractVideoId();
-  if (!videoId) {
-    showError("Can't find video ID in URL");
-    return; // showError already resets isProcessing
+// Read whatever caption text is on screen right now. YouTube splits
+// one line across several .ytp-caption-segment nodes, so join them.
+function readCaption() {
+  const segments = document.querySelectorAll(".ytp-caption-segment");
+  return Array.from(segments)
+    .map((el) => el.textContent)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function startObserving() {
+  const player =
+    document.querySelector("#movie_player") ||
+    document.querySelector(".html5-video-player");
+  if (!player) {
+    // Player not built yet (SPA). Retry shortly while still enabled.
+    if (enabled) setTimeout(startObserving, 1000);
+    return;
   }
 
+  ensureOverlay(player);
+  stopObserving();
+
+  // Observe the whole player subtree: the caption window is created
+  // and destroyed as captions come and go, so watching a stable
+  // ancestor is more reliable than the caption container itself.
+  captionObserver = new MutationObserver(onCaptionMutation);
+  captionObserver.observe(player, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+  console.log("[SightAhead] Observing captions");
+}
+
+function stopObserving() {
+  if (captionObserver) {
+    captionObserver.disconnect();
+    captionObserver = null;
+  }
+  clearTimeout(settleTimer);
+  settleTimer = null;
+}
+
+// We ignore the mutation records themselves — they are just a
+// "something changed, go re-read" signal. Debounce so a rolling
+// auto-caption settles into a complete line before we translate it.
+function onCaptionMutation() {
+  const text = readCaption();
+  if (!text || text === lastSourceText) return;
+
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => {
+    const settled = readCaption();
+    if (!settled || settled === lastSourceText) return;
+    lastSourceText = settled;
+    handleLine(settled);
+  }, SETTLE_MS);
+}
+
+// ── TRANSLATION ─────────────────────────────────────────────
+// Hand the settled English line to the background worker (CORS-free,
+// user's IP) and paint the Mongolian back. A sequence guard drops
+// responses that arrive after a newer line has already been shown.
+async function handleLine(text) {
+  const seq = ++translateSeq;
   try {
-    // ── STEP 1: Fetch captions ──────────────────────────────
-    updateButton("⏳ Fetching captions...", true);
-
-    const captionResult = await sendMessage({
-      type: "FETCH_CAPTIONS",
-      videoId: videoId
-    });
-
-    if (!captionResult.success) {
-      throw new Error(captionResult.error || "Failed to fetch captions");
+    const res = await sendMessage({ type: "TRANSLATE_LINE", text });
+    if (seq !== translateSeq) return; // a newer line superseded this one
+    if (res && res.success && res.data && res.data.translated) {
+      setOverlayText(res.data.translated);
     }
-
-    const { segments, language } = captionResult.data;
-    console.log(`[SightAhead] Got ${segments.length} segments in ${language}`);
-
-    // ── STEP 2: Send to backend for translation + TTS ───────
-    updateButton(`⏳ Translating ${segments.length} segments...`, true);
-
-    const dubResult = await sendMessage({
-      type: "TRANSLATE_AND_DUB",
-      captions: segments,
-      videoId: videoId
-    });
-
-    if (!dubResult.success) {
-      throw new Error(dubResult.error || "Backend dubbing failed");
-    }
-
-    // ── STEP 3: Play the dubbed audio ───────────────────────
-    updateButton("🔊 Playing dubbed audio", false);
-    playDubbedAudio(dubResult.data);
-
-    // Flow is done — release the lock so the user can re-trigger.
-    isProcessing = false;
-
   } catch (err) {
-    console.error("[SightAhead] Error:", err);
-    showError(err.message);
+    console.warn("[SightAhead] translate failed:", err.message);
   }
 }
-
-// ── MESSAGE PASSING WRAPPER ─────────────────────────────────
-// Wraps chrome.runtime.sendMessage in a Promise so we can await it.
-// The raw API uses callbacks — this makes it cleaner.
 
 function sendMessage(message) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(message, (response) => {
-      // chrome.runtime.lastError fires if background worker crashed
-      // or the message channel broke
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
       } else {
@@ -194,127 +224,28 @@ function sendMessage(message) {
   });
 }
 
-// ── AUDIO PLAYBACK ──────────────────────────────────────────
-// TODO: This is the part you'll customize based on your backend's
-// response format. Options:
-// 1. Single audio URL → play alongside video
-// 2. Per-segment audio → sync each to video timestamps
-
-function playDubbedAudio(dubData) {
-  stopDubbedAudio();
-
-  const video = document.querySelector("video");
-  if (!video) return;
-
-  // Per-segment base64 audio (backend /api/dub response)
-  if (dubData.translated_segments && dubData.translated_segments.length > 0) {
-    const segments = dubData.translated_segments;
-    video.volume = 0.1;
-
-    function scheduleSegments() {
-      segmentTimers.forEach(clearTimeout);
-      segmentTimers = [];
-      const now = video.currentTime;
-
-      segments.forEach((seg) => {
-        if (!seg.audio_b64 || seg.start < now) return;
-        const delayMs = (seg.start - now) * 1000;
-        const id = setTimeout(() => {
-          if (video.paused) return;
-          const blob = b64ToBlob(seg.audio_b64, "audio/mpeg");
-          const url = URL.createObjectURL(blob);
-          const clip = new Audio(url);
-          clip.onended = () => URL.revokeObjectURL(url);
-          clip.play().catch(() => {});
-        }, delayMs);
-        segmentTimers.push(id);
-      });
-    }
-
-    audioListeners = new AbortController();
-    const { signal } = audioListeners;
-    scheduleSegments();
-    video.addEventListener("play", scheduleSegments, { signal });
-    video.addEventListener("seeked", scheduleSegments, { signal });
-    video.addEventListener("pause", () => {
-      segmentTimers.forEach(clearTimeout);
-      segmentTimers = [];
-    }, { signal });
-    return;
-  }
-
-  // Fallback: single audio URL
-  if (dubData.audio_url) {
-    const audio = new Audio(dubData.audio_url);
-    activeAudio = audio;
-
-    audioListeners = new AbortController();
-    const { signal } = audioListeners;
-
-    audio.currentTime = video.currentTime;
-    audio.play();
-
-    video.addEventListener("pause", () => audio.pause(), { signal });
-    video.addEventListener("play", () => {
-      audio.currentTime = video.currentTime;
-      audio.play();
-    }, { signal });
-    video.addEventListener("seeked", () => {
-      audio.currentTime = video.currentTime;
-      }, { signal });
-
-      // Optional: lower video volume so dub is heard over original
-      video.volume = 0.1;
-    } else {
-      audio.play();
-    }
-  }
-
-  // TODO: If your backend returns per-segment audio, you'd iterate
-  // segments and schedule each audio clip at the right timestamp
+// ── OVERLAY ─────────────────────────────────────────────────
+// Lives INSIDE the player element so it stays visible in fullscreen
+// (a body-level fixed element would vanish when the player goes FS).
+function ensureOverlay(player) {
+  if (overlayEl && overlayEl.isConnected) return overlayEl;
+  overlayEl = document.createElement("div");
+  overlayEl.id = "sightahead-overlay";
+  player.appendChild(overlayEl);
+  return overlayEl;
 }
 
-// Stops the current dub audio and removes the video sync listeners.
-function stopDubbedAudio() {
-  segmentTimers.forEach(clearTimeout);
-  segmentTimers = [];
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio.src = "";
-    activeAudio = null;
+function setOverlayText(text) {
+  if (!overlayEl || !overlayEl.isConnected) {
+    const player =
+      document.querySelector("#movie_player") ||
+      document.querySelector(".html5-video-player");
+    if (player) ensureOverlay(player);
   }
-  if (audioListeners) {
-    audioListeners.abort();
-    audioListeners = null;
-  }
+  if (!overlayEl) return;
+  overlayEl.textContent = text || "";
+  overlayEl.style.display = text ? "block" : "none";
 }
 
-function b64ToBlob(b64, mimeType) {
-  const bytes = atob(b64);
-  const arr = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  return new Blob([arr], { type: mimeType });
-}
-
-// ── UI HELPERS ──────────────────────────────────────────────
-function updateButton(text, disabled) {
-  if (dubButton) {
-    dubButton.textContent = text;
-    dubButton.disabled = disabled;
-  }
-}
-
-function showError(message) {
-  isProcessing = false;
-  if (dubButton) {
-    dubButton.textContent = "❌ " + message;
-    dubButton.className = "sightahead-btn sightahead-error";
-    dubButton.disabled = false;
-
-    // Reset after 3 seconds
-    setTimeout(() => resetUI(), 3000);
-  }
-}
-
-// ── START ────────────────────────────────────────────────────
+// ── START ───────────────────────────────────────────────────
 init();

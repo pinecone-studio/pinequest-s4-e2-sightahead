@@ -15,6 +15,9 @@ google-generativeai
 httpx
 mutagen
 
+# Edge TTS (test endpoint /test/tts — lightweight websocket client, no ML)
+edge-tts
+
 # Audio (duration only — pydub/azure SDK not used; TTS calls Azure REST via httpx)
 mutagen
 

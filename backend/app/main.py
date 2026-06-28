@@ -9,6 +9,8 @@ from app.config import get_settings, AUDIO_DIR
 from app.routers import assistant, auth, summary, video, voice, pipeline, translate
 from app.routers.tts import router as tts_router
 
+# test-router
+from app.routers.testtranslate import router as test_translate_router
 
 # Configure application logging so app loggers (e.g. the /process pipeline)
 # actually surface. Set LOG_LEVEL=DEBUG to see per-segment transcript logs.
@@ -30,7 +32,7 @@ app.add_middleware(
 )
 
 # Static dub audio served from the local audio directory.
-#this needs to be deployed to database ffs, server dont have it, servers just wipe out
+# this needs to be deployed to database ffs, server dont have it, servers just wipe out
 os.makedirs(AUDIO_DIR, exist_ok=True)
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
@@ -47,7 +49,8 @@ app.include_router(assistant.router)
 
 # TTS synthesis endpoint
 app.include_router(tts_router)
-
+# edge-tts test endpoint
+app.include_router(test_translate_router)
 
 @app.get("/", tags=["system"])
 def root() -> dict[str, str]:

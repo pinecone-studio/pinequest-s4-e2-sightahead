@@ -37,3 +37,40 @@
   background: #c62828;
   font-size: 12px;
 }
+
+.sightahead-btn.sightahead-active {
+  background: #0a8a3c;
+}
+
+.sightahead-btn.sightahead-active:hover {
+  background: #097a35;
+}
+
+/* ── Live Mongolian subtitle overlay ──────────────────────────
+   Injected inside #movie_player so it stays visible in fullscreen.
+   Sits just above YouTube's own caption row. */
+#sightahead-overlay {
+  position: absolute;
+  bottom: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: 90%;
+  padding: 4px 14px;
+  background: rgba(8, 8, 8, 0.82);
+  color: #fff;
+  font-family: "Roboto", Arial, sans-serif;
+  font-size: clamp(16px, 2.4vw, 30px);
+  line-height: 1.35;
+  text-align: center;
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+/* When our overlay is active, hide YouTube's native caption text so we
+   don't show English and Mongolian on top of each other. The caption
+   DOM still updates (we read it) — we only hide it visually. */
+body.sightahead-on .ytp-caption-window-container {
+  opacity: 0 !important;
+}
