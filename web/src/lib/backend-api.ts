@@ -72,6 +72,28 @@ export type ProcessResult = {
   segments: Segment[];
 };
 
+export type AssistantMode = "help" | "current_segment" | "summary" | "question";
+
+export type AssistantSegmentPayload = {
+  start: number;
+  duration: number;
+  text: string;
+  translated_text?: string | null;
+};
+
+export type AssistantChatPayload = {
+  mode: AssistantMode;
+  question?: string;
+  video_id?: string;
+  current_time?: number;
+  segments?: AssistantSegmentPayload[];
+};
+
+export type AssistantChatResponse = {
+  mode: AssistantMode;
+  answer: string;
+};
+
 // ===== Auth =====
 
 export function registerBackendUser(payload: {
@@ -138,6 +160,17 @@ export function createVideoNote(
   return apifetch<NoteRecord>(`/videos/${videoId}/notes`, {
     method: "POST",
     data: { video_id: videoId, timestamp_ms: timestampMs, content },
+  });
+}
+
+// ===== Assistant chatbot =====
+
+export function chatWithAssistant(
+  payload: AssistantChatPayload,
+): Promise<AssistantChatResponse> {
+  return apifetch<AssistantChatResponse>("/assistant/chat", {
+    method: "POST",
+    data: payload,
   });
 }
 

@@ -13,17 +13,22 @@ export function useProcessedVideo(videoId: string) {
 
   useEffect(() => {
     if (!videoId) {
-      setSegments([]);
-      setError("");
-      setLoading(false);
+      queueMicrotask(() => {
+        setSegments([]);
+        setError("");
+        setLoading(false);
+      });
       return;
     }
 
     let active = true;
 
-    setSegments([]);
-    setError("");
-    setLoading(true);
+    queueMicrotask(() => {
+      if (!active) return;
+      setSegments([]);
+      setError("");
+      setLoading(true);
+    });
     console.log("[useProcessedVideo] fetching captions for", videoId);
 
     (async () => {

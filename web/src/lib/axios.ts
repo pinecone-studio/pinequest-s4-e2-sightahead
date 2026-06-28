@@ -64,7 +64,7 @@ api.interceptors.response.use(
  * Returns the parsed JSON body (response.data) directly, and throws on non-2xx
  * with the backend's `detail` as the message.
  */
-export async function apifetch<T = any>(
+export async function apifetch<T = unknown>(
   path: string,
   config: AxiosRequestConfig = {},
 ): Promise<T> {
