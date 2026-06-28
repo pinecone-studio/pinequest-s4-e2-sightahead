@@ -6,35 +6,29 @@ import { PENCIL } from "./cursors"
 import { NoteEditor } from "./NoteEditor"
 import { NoteList } from "./NoteList"
 import { NotesHeader } from "./NotesHeader"
-import { ReviewPane } from "./ReviewPane"
 
 type NotesPaneProps = {
   notes: Note[]
   draft: string
-  mode: "write" | "review"
   justAdded: string | null
   onDraftChange: (value: string) => void
   onAddNote: () => void
-  onSetMode: (mode: "write" | "review") => void
   onJump: (time: number) => void
-  onOpenSummary: () => void
+  onOpenAssistant: () => void
   onCollapse: () => void
 }
 
 export function NotesPane({
   notes,
   draft,
-  mode,
   justAdded,
   onDraftChange,
   onAddNote,
-  onSetMode,
   onJump,
-  onOpenSummary,
+  onOpenAssistant,
   onCollapse,
 }: NotesPaneProps) {
   const sorted = [...notes].sort((a, b) => a.time - b.time)
-  const isWrite = mode === "write"
   const [isPressing, setIsPressing] = useState(false)
 
   return (
@@ -51,21 +45,15 @@ export function NotesPane({
       <div className="dashboard-notes-content">
         <NotesHeader
           count={sorted.length}
-          mode={mode}
-          onSetMode={onSetMode}
-          onOpenSummary={onOpenSummary}
+          onOpenAssistant={onOpenAssistant}
           onCollapse={onCollapse}
         />
         <div className="dashboard-scroll dashboard-notes-scroll">
-          {isWrite ? (
-            <div style={{ padding: "4px 24px 16px" }}>
-              <NoteList notes={sorted} justAdded={justAdded} onJump={onJump} />
-            </div>
-          ) : (
-            <ReviewPane notes={sorted} onJump={onJump} />
-          )}
+          <div className="dashboard-notes-list-wrap">
+            <NoteList notes={sorted} justAdded={justAdded} onJump={onJump} />
+          </div>
         </div>
-        {isWrite && <NoteEditor draft={draft} onDraftChange={onDraftChange} onAddNote={onAddNote} />}
+        <NoteEditor draft={draft} onDraftChange={onDraftChange} onAddNote={onAddNote} />
       </div>
     </div>
   )

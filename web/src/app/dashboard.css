@@ -1777,3 +1777,554 @@
   cursor: text;
 }
 
+/* ===== Assistant chatbot ===== */
+.dashboard-assistant-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 42;
+  pointer-events: none;
+}
+
+.dashboard-assistant-panel {
+  position: absolute;
+  top: 88px;
+  right: 24px;
+  bottom: 24px;
+  width: min(410px, calc(100vw - 32px));
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 8px;
+  color: var(--dashboard-fg);
+  background: hsl(var(--popover) / 0.96);
+  box-shadow: 0 28px 80px -34px rgba(0, 0, 0, 0.88);
+  pointer-events: auto;
+}
+
+.dashboard-assistant-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--dashboard-border);
+}
+
+.dashboard-assistant-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-assistant-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 50%;
+  color: var(--dashboard-primary-fg);
+  background: var(--dashboard-primary);
+}
+
+.dashboard-assistant-title div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-assistant-title strong {
+  color: var(--dashboard-fg);
+  font: 700 14px/1.25 var(--dashboard-font);
+}
+
+.dashboard-assistant-title small {
+  overflow: hidden;
+  color: var(--dashboard-muted-fg);
+  font: 11px/1.2 var(--dashboard-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-assistant-close {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 50%;
+  color: var(--dashboard-muted-fg);
+  background: transparent;
+  cursor: pointer;
+}
+
+.dashboard-assistant-close:hover {
+  color: var(--dashboard-fg);
+  background: var(--dashboard-card-soft);
+}
+
+.dashboard-assistant-actions {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--dashboard-border);
+}
+
+.dashboard-assistant-actions button {
+  min-width: 0;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 999px;
+  color: var(--dashboard-fg);
+  background: hsl(var(--muted) / 0.42);
+  cursor: pointer;
+  font: 650 12px/1 var(--dashboard-font);
+}
+
+.dashboard-assistant-actions button:hover:not(:disabled) {
+  background: var(--dashboard-card-soft);
+}
+
+.dashboard-assistant-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.dashboard-assistant-actions button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-assistant-messages {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 16px 14px;
+}
+
+.dashboard-assistant-message {
+  width: fit-content;
+  max-width: 88%;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--dashboard-fg);
+  background: hsl(var(--card) / 0.72);
+  font: 13px/1.55 var(--dashboard-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-assistant-message.is-user {
+  align-self: flex-end;
+  color: var(--dashboard-primary-fg);
+  background: var(--dashboard-primary);
+}
+
+.dashboard-assistant-message.is-loading {
+  color: var(--dashboard-muted-fg);
+  background: hsl(var(--muted) / 0.35);
+}
+
+.dashboard-assistant-input-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 14px;
+  border-top: 1px solid var(--dashboard-border);
+  background: hsl(var(--background) / 0.32);
+}
+
+.dashboard-assistant-input-row input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 999px;
+  outline: none;
+  padding: 0 14px;
+  color: var(--dashboard-fg);
+  background: hsl(var(--background) / 0.56);
+  font: 13px var(--dashboard-font);
+}
+
+.dashboard-assistant-input-row input::placeholder {
+  color: var(--dashboard-muted-fg);
+}
+
+.dashboard-assistant-input-row input:focus {
+  border-color: var(--dashboard-primary);
+}
+
+.dashboard-assistant-input-row button {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--dashboard-primary-fg);
+  background: var(--dashboard-primary);
+  cursor: pointer;
+}
+
+.dashboard-assistant-input-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.dashboard-app-shell :is(
+  .dashboard-assistant-close,
+  .dashboard-assistant-actions button,
+  .dashboard-assistant-input-row button
+):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+@media (max-width: 760px) {
+  .dashboard-assistant-panel {
+    top: 72px;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    min-height: 360px;
+  }
+}
+
+/* Right panel Notes/Ask switch. Assistant now occupies the notes column instead
+   of floating over the full dashboard. */
+.dashboard-app-shell .dashboard-assistant-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 4px 24px 26px 0;
+  animation: panelSlideIn 180ms ease-out both;
+}
+
+.dashboard-panel-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.38);
+}
+
+.dashboard-panel-toggle button {
+  min-width: 0;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--dashboard-muted-fg);
+  background: transparent;
+  cursor: pointer;
+  font: 650 11px/1 var(--dashboard-font);
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.dashboard-panel-toggle button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-panel-toggle button:hover:not(.is-active) {
+  color: var(--dashboard-fg);
+  background: var(--dashboard-card-soft);
+}
+
+.dashboard-panel-toggle button.is-active {
+  color: var(--dashboard-primary-fg);
+  background: var(--dashboard-primary);
+  cursor: default;
+  pointer-events: none;
+}
+
+.dashboard-notes-header {
+  flex: none;
+  padding: 14px 18px 0;
+}
+
+.dashboard-notes-list-wrap {
+  padding: 2px 16px 10px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane::before {
+  content: none;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-notes-title-row {
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-notes-actions {
+  gap: 6px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-notes-title {
+  font-size: 24px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane :is(
+  .dashboard-notes-count,
+  .dashboard-note-time,
+  .dashboard-note-row-time,
+  .dashboard-review-row span:first-child
+) {
+  font-size: 15px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-panel-toggle {
+  border-color: var(--paper-outline);
+  background: var(--paper-outline-bg);
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-panel-toggle button {
+  height: 28px;
+  color: var(--paper-ink-soft);
+  font-family: var(--font-onest), system-ui, sans-serif;
+  font-size: 11px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-panel-toggle button:hover:not(.is-active) {
+  color: var(--paper-ink-strong);
+  background: var(--paper-hover);
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-panel-toggle button.is-active {
+  color: var(--paper-btn-fg);
+  background: var(--paper-btn-bg);
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-notes-tabs {
+  gap: 16px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-notes-tabs button {
+  padding: 3px 1px 8px;
+  font-size: 15px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-note-editor {
+  gap: 8px;
+  padding: 9px 16px 12px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-note-textarea {
+  max-height: 96px;
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-send-button {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane :is(.dashboard-note-row, .dashboard-review-row) {
+  gap: 10px;
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-note-row-time {
+  width: 34px;
+}
+
+.dashboard-app-shell .dashboard-notes-pane .dashboard-note-row-text {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.dashboard-app-shell :is(
+  .dashboard-panel-toggle button,
+  .dashboard-assistant-actions button,
+  .dashboard-assistant-input-row button
+):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.dashboard-app-shell .dashboard-assistant-panel {
+  --paper-bg: #fdfcf4;
+  --paper-line: rgba(70, 85, 110, 0.22);
+  --paper-ink: #2b2f3a;
+  --paper-ink-strong: #1f2430;
+  --paper-ink-soft: rgba(43, 47, 58, 0.55);
+  --paper-accent: #4a6fa5;
+  --paper-hover: rgba(70, 85, 110, 0.08);
+  --paper-btn-bg: #2b2f3a;
+  --paper-btn-fg: #fdfcf4;
+  --paper-outline: rgba(43, 47, 58, 0.25);
+  --paper-outline-bg: rgba(43, 47, 58, 0.06);
+  --paper-input-bg: rgba(255, 255, 255, 0.6);
+
+  color: var(--paper-ink);
+  background-color: var(--paper-bg);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 33px,
+    var(--paper-line) 33px,
+    var(--paper-line) 34px
+  );
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 26px 60px -30px rgba(0, 0, 0, 0.8);
+}
+
+.dark .dashboard-app-shell .dashboard-assistant-panel {
+  --paper-bg: #1a1d24;
+  --paper-line: rgba(150, 170, 205, 0.14);
+  --paper-ink: #e8ebf0;
+  --paper-ink-strong: #ffffff;
+  --paper-ink-soft: rgba(232, 235, 240, 0.5);
+  --paper-accent: #8fb0e0;
+  --paper-hover: rgba(150, 170, 205, 0.1);
+  --paper-btn-bg: #e8ebf0;
+  --paper-btn-fg: #1a1d24;
+  --paper-outline: rgba(232, 235, 240, 0.25);
+  --paper-outline-bg: rgba(232, 235, 240, 0.08);
+  --paper-input-bg: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel :is(
+  .dashboard-assistant-header,
+  .dashboard-assistant-actions,
+  .dashboard-assistant-input-row
+) {
+  border-color: var(--paper-outline);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-title {
+  flex: 1;
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-title strong {
+  color: var(--paper-ink-strong);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-title small {
+  color: var(--paper-ink-soft);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-avatar,
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-input-row button,
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-panel-toggle button.is-active {
+  color: var(--paper-btn-fg);
+  background: var(--paper-btn-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-panel-toggle,
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-notes-icon-button {
+  border-color: var(--paper-outline);
+  background: var(--paper-outline-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel :is(
+  .dashboard-panel-toggle button,
+  .dashboard-notes-icon-button,
+  .dashboard-assistant-actions button
+) {
+  color: var(--paper-ink);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel :is(
+  .dashboard-panel-toggle button:hover:not(.is-active),
+  .dashboard-notes-icon-button:hover,
+  .dashboard-assistant-actions button:hover:not(:disabled)
+) {
+  color: var(--paper-ink-strong);
+  background: var(--paper-hover);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-actions button {
+  border-color: var(--paper-outline);
+  background: var(--paper-outline-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-message {
+  color: var(--paper-ink);
+  border-color: var(--paper-outline);
+  background: var(--paper-input-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-message.is-user {
+  color: var(--paper-btn-fg);
+  background: var(--paper-btn-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-message.is-loading {
+  color: var(--paper-ink-soft);
+  background: var(--paper-outline-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-input-row {
+  background: transparent;
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-input-row input {
+  color: var(--paper-ink);
+  border-color: var(--paper-outline);
+  background: var(--paper-input-bg);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-input-row input::placeholder {
+  color: var(--paper-ink-soft);
+}
+
+.dashboard-app-shell .dashboard-assistant-panel .dashboard-assistant-input-row input:focus {
+  border-color: var(--paper-accent);
+}
+

@@ -51,6 +51,18 @@ type CaptionTrack = {
   kind?: string; // "asr" for auto-generated
 };
 
+type PlayerResponse = {
+  playabilityStatus?: {
+    status?: string;
+    reason?: string;
+  };
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: CaptionTrack[];
+    };
+  };
+};
+
 // ── Public entry point ──────────────────────────────────────────────────────
 
 // Tries every strategy until one returns segments. Throws an aggregated error
@@ -157,7 +169,7 @@ async function viaInnertube(videoId: string, lang: string): Promise<CaptionResul
   });
   if (!res.ok) throw new Error(`player API HTTP ${res.status}`);
 
-  const data = (await res.json()) as any;
+  const data = (await res.json()) as PlayerResponse;
   const status = data?.playabilityStatus?.status;
   if (status && status !== "OK") {
     const reason = data?.playabilityStatus?.reason ?? "";
@@ -232,7 +244,7 @@ async function viaWatchPage(videoId: string, lang: string): Promise<CaptionResul
 
 // Extracts the ytInitialPlayerResponse object via brace-balanced slicing
 // (a non-greedy regex truncates on the first "}" inside the huge JSON blob).
-function extractPlayerResponse(html: string): any | null {
+function extractPlayerResponse(html: string): PlayerResponse | null {
   for (const marker of ["ytInitialPlayerResponse =", "ytInitialPlayerResponse="]) {
     const at = html.indexOf(marker);
     if (at === -1) continue;

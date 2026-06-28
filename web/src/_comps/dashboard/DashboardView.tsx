@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AmbientBackground } from "@/_comps/dashboard/AmbientBackground";
 import {
-  buildScholarReply,
   FALLBACK_DURATION,
   type HistoryItem,
   type Note,
@@ -14,7 +13,7 @@ import {
 } from "@/_comps/dashboard/HistoryRail";
 import { NotesPane } from "@/_comps/dashboard/NotesPane";
 import { RecommendedVideos } from "@/_comps/dashboard/RecommendedVideos";
-import { ScholarOverlay } from "@/_comps/dashboard/ScholarOverlay";
+import { AssistantChat } from "@/_comps/dashboard/AssistantChat";
 import { DashboardHeader } from "@/_comps/dashboard/DashboardHeader";
 import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
 import { VideoPane } from "@/_comps/dashboard/VideoPane";
@@ -184,9 +183,8 @@ export default function DashboardView({
   const [historyError, setHistoryError] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<"write" | "review">("write");
   const [justAdded, setJustAdded] = useState<string | null>(null);
-  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const [query, setQuery] = useState("");
@@ -284,7 +282,6 @@ export default function DashboardView({
     loading: processingLoading,
     error: processingError,
   } = useProcessedVideo(videoId);
-  const reply = useMemo(() => buildScholarReply(notes), [notes]);
   const recommendationSearchQuery = useMemo(
     () => recommendationQuery(activeItem),
     [activeItem],
@@ -435,7 +432,7 @@ export default function DashboardView({
 
   // Switch to a video picked from the history rail.
   function selectHistory(item: HistoryItem) {
-    setSummaryOpen(false);
+    setAssistantOpen(false);
     setSearchResults([]);
     setSearchError("");
     if (item.id === videoId) return;
@@ -635,34 +632,48 @@ export default function DashboardView({
             ) : null
           }
         />
-        {notesCollapsed ? (
+        {assistantOpen ? (
+          <AssistantChat
+            open={assistantOpen}
+            videoId={videoId}
+            currentTime={player.time}
+            segments={processedSegments}
+            onClose={() => setAssistantOpen(false)}
+            onCollapse={() => {
+              setAssistantOpen(false);
+              setNotesCollapsed(true);
+            }}
+          />
+        ) : notesCollapsed ? (
           <RecommendedVideos
             items={visibleRecommendedVideos}
             loading={visibleRecommendationsLoading}
             error={visibleRecommendationsError}
             onSelect={selectRecommendedVideo}
-            onOpenNotes={() => setNotesCollapsed(false)}
+            onOpenNotes={() => {
+              setAssistantOpen(false);
+              setNotesCollapsed(false);
+            }}
           />
         ) : (
           <NotesPane
             notes={notes}
             draft={draft}
-            mode={mode}
             justAdded={justAdded}
             onDraftChange={setDraft}
             onAddNote={addNote}
-            onSetMode={setMode}
             onJump={player.seek}
-            onOpenSummary={() => setSummaryOpen(true)}
-            onCollapse={() => setNotesCollapsed(true)}
+            onOpenAssistant={() => {
+              setNotesCollapsed(false);
+              setAssistantOpen(true);
+            }}
+            onCollapse={() => {
+              setAssistantOpen(false);
+              setNotesCollapsed(true);
+            }}
           />
         )}
       </div>
-      <ScholarOverlay
-        open={summaryOpen}
-        reply={reply}
-        onClose={() => setSummaryOpen(false)}
-      />
     </div>
   );
 }
