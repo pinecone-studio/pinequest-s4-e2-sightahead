@@ -19,11 +19,16 @@ import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
 import { useDubAudio } from "@/_comps/dashboard/useDubAudio";
 import { VideoPane } from "@/_comps/dashboard/VideoPane";
 import { SubtitlePane } from "@/_comps/dashboard/SubtitlePane";
+import ChannelView from "@/_comps/youtube-search/ChannelView";
 import SearchResults from "@/_comps/youtube-search/SearchResults";
 import { fetchYouTubeResults } from "@/_comps/youtube-search/api";
+import { type ChannelTab } from "@/_comps/youtube-search/constants";
+import { useChannelTabResults } from "@/_comps/youtube-search/useChannelTabResults";
 import {
   getYouTubeVideoId,
+  isChannelResult,
   isPodcastLikeItem,
+  isPlaylistResult,
   isShortLikeVideo,
   isVideoResult,
 } from "@/_comps/youtube-search/utils";
@@ -38,6 +43,7 @@ import {
   type VideoHistoryRecord,
 } from "@/lib/backend-api";
 import type {
+  YouTubeChannelSearchResult,
   YouTubeSearchResult,
   YouTubeVideoSearchResult,
 } from "@/lib/youtube-search";
@@ -198,6 +204,10 @@ export default function DashboardView({
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<YouTubeSearchResult[]>([]);
+  const [selectedSearchChannel, setSelectedSearchChannel] =
+    useState<YouTubeChannelSearchResult | null>(null);
+  const [activeSearchChannelTab, setActiveSearchChannelTab] =
+    useState<ChannelTab>("home");
   const [searchError, setSearchError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [recommendedVideos, setRecommendedVideos] = useState<
@@ -206,6 +216,11 @@ export default function DashboardView({
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState("");
   const playbackRef = useRef({ time: 0, duration: 0 });
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchChannelTabs = useChannelTabResults(
+    selectedSearchChannel,
+    activeSearchChannelTab,
+  );
 
   // Fetch the user's saved watch history from the backend.
   const reloadHistory = useCallback(async () => {
@@ -318,6 +333,11 @@ export default function DashboardView({
   const visibleRecommendationsError = recommendationSearchQuery
     ? recommendationsError
     : "";
+  const searchPanelOpen =
+    isSearching ||
+    Boolean(searchError) ||
+    searchResults.length > 0 ||
+    Boolean(selectedSearchChannel);
 
   useEffect(() => {
     playbackRef.current = { time: player.time, duration: player.duration };
@@ -325,11 +345,12 @@ export default function DashboardView({
 
   useEffect(() => {
     if (dubMode === "mongolian") {
-      player.mute();
-    } else {
       player.unMute();
+      player.setVolume(10);
+    } else {
+      player.setVolume(100);
     }
-  }, [dubMode, player.mute, player.unMute]);
+  }, [dubMode, player.unMute, player.setVolume]);
 
   // Re-show the "Process Video?" wall whenever a different video is selected.
   useEffect(() => {
@@ -442,6 +463,8 @@ export default function DashboardView({
   function selectHistory(item: HistoryItem) {
     setAssistantOpen(false);
     setSearchResults([]);
+    setSelectedSearchChannel(null);
+    searchChannelTabs.reset();
     setSearchError("");
     if (item.id === videoId) return;
     console.log(`selected video ${item.id}`);
@@ -456,9 +479,24 @@ export default function DashboardView({
 
   // Switch to a video picked from the search results panel.
   function selectSearchResult(item: YouTubeSearchResult) {
+    if (isChannelResult(item)) {
+      searchChannelTabs.reset();
+      setSelectedSearchChannel(item);
+      setActiveSearchChannelTab("home");
+      setSearchError("");
+      return;
+    }
+
+    if (isPlaylistResult(item)) {
+      window.open(item.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
     if (!isVideoResult(item)) return;
     const selection = selectionFromResult(item);
     setSearchResults([]);
+    setSelectedSearchChannel(null);
+    searchChannelTabs.reset();
     setSearchError("");
     setSearchedQuery("");
     setQuery("");
@@ -471,11 +509,24 @@ export default function DashboardView({
     if (item.videoId === videoId) return;
     const selection = selectionFromResult(item);
     setSearchResults([]);
+    setSelectedSearchChannel(null);
+    searchChannelTabs.reset();
     setSearchError("");
     setSearchedQuery("");
     console.log(`selected video ${item.videoId}`);
     onSearch?.(selection.url, selection);
   }
+
+  const dismissSearchPanel = useCallback(() => {
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
+    setIsSearching(false);
+    setSearchResults([]);
+    setSelectedSearchChannel(null);
+    searchChannelTabs.reset();
+    setSearchError("");
+    setSearchedQuery("");
+  }, [searchChannelTabs]);
 
   useEffect(() => {
     if (!notesCollapsed || !recommendationSearchQuery) {
@@ -540,8 +591,12 @@ export default function DashboardView({
 
     const directId = getYouTubeVideoId(trimmed);
     if (directId) {
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
       const url = `https://www.youtube.com/watch?v=${directId}`;
       setSearchResults([]);
+      setSelectedSearchChannel(null);
+      searchChannelTabs.reset();
       setSearchError("");
       setSearchedQuery("");
       console.log(`selected video ${directId}`);
@@ -550,30 +605,78 @@ export default function DashboardView({
     }
 
     if (trimmed.length < 2) {
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
+      setIsSearching(false);
       setSearchError("Search query must be at least 2 characters.");
       setSearchResults([]);
+      setSelectedSearchChannel(null);
+      searchChannelTabs.reset();
       return;
     }
 
     setIsSearching(true);
     setSearchError("");
     setSearchedQuery(trimmed);
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
 
     try {
-      const results = await fetchYouTubeResults(trimmed, { type: "video" });
+      const results = await fetchYouTubeResults(trimmed, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setSearchResults(results);
+      setSelectedSearchChannel(null);
+      searchChannelTabs.reset();
       if (results.length === 0) {
-        setSearchError("No videos found. Try another query.");
+        setSearchError("No results found. Try another query.");
       }
     } catch (error) {
+      if (controller.signal.aborted) return;
       setSearchResults([]);
       setSearchError(
         error instanceof Error ? error.message : "YouTube search failed.",
       );
     } finally {
-      setIsSearching(false);
+      if (searchAbortRef.current === controller) {
+        searchAbortRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setIsSearching(false);
+      }
     }
   }
+
+  useEffect(() => {
+    if (!searchPanelOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!(event.target instanceof Element)) return;
+      if (
+        event.target.closest(".dashboard-search") ||
+        event.target.closest(".dashboard-search-results-panel")
+      ) {
+        return;
+      }
+      dismissSearchPanel();
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        dismissSearchPanel();
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [dismissSearchPanel, searchPanelOpen]);
 
   // Layout: header + optional search panel on top; below, a 3-column row of
   // history rail | video+subtitles | notes (or recommendations when collapsed).
@@ -590,7 +693,7 @@ export default function DashboardView({
         onBack={onBack}
         onLogout={onLogout}
       />
-      {(isSearching || searchError || searchResults.length > 0) && (
+      {searchPanelOpen && (
         <div className="dashboard-search-results-panel">
           {isSearching && (
             <div className="dashboard-search-status">Searching YouTube...</div>
@@ -599,12 +702,29 @@ export default function DashboardView({
             <div className="dashboard-search-status">{searchError}</div>
           )}
           {!isSearching && searchResults.length > 0 && (
-            <SearchResults
-              query={searchedQuery}
-              results={searchResults}
-              counts={searchCounts}
-              onSelect={selectSearchResult}
-            />
+            selectedSearchChannel ? (
+              <ChannelView
+                channel={selectedSearchChannel}
+                results={searchResults}
+                tabResults={searchChannelTabs.tabResults}
+                activeTab={activeSearchChannelTab}
+                isLoading={searchChannelTabs.loadingTab === activeSearchChannelTab}
+                error={searchChannelTabs.error}
+                onTabChange={(tab) => {
+                  searchChannelTabs.clearError();
+                  setActiveSearchChannelTab(tab);
+                }}
+                onBack={() => setSelectedSearchChannel(null)}
+                onSelect={selectSearchResult}
+              />
+            ) : (
+              <SearchResults
+                query={searchedQuery}
+                results={searchResults}
+                counts={searchCounts}
+                onSelect={selectSearchResult}
+              />
+            )
           )}
         </div>
       )}
@@ -664,6 +784,7 @@ export default function DashboardView({
               setAssistantOpen(false);
               setNotesCollapsed(true);
             }}
+            onSelectHistory={selectHistory}
           />
         ) : notesCollapsed ? (
           <RecommendedVideos

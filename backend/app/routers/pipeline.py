@@ -11,6 +11,7 @@ over SSE with inline base64 audio so the UI can play it like a live dub.
 import base64
 import json
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, HTTPException
@@ -104,8 +105,12 @@ async def process_video(request: ProcessRequest):
         # Frontend places segments by index so out-of-order delivery is fine.
         tts_failures = 0
 
+        _bracket_only = re.compile(r"^\s*(\[.*?\]\s*)+$")
+
         def _tts_one(i: int) -> tuple[int, str, str, int]:
             mn_text = translations[i] if i < len(translations) else segments_in[i].text
+            if _bracket_only.match(mn_text):
+                return i, mn_text, "", 0
             try:
                 audio_bytes = synthesize(mn_text, {"gender": request.gender})
                 audio_ms = audio_duration_ms_from_bytes(audio_bytes)
@@ -153,8 +158,9 @@ async def process_video(request: ProcessRequest):
 
         if request.video_id:
             try:
-                cache_video(request.video_id, {"segments": [
+                cache_video(request.video_id, {"source_lang": request.source_lang, "segments": [
                     {"start": s.start, "duration": s.duration, "text": s.text,
+                     "source": "youtube_captions",
                      "translated_text": translations[i] if i < len(translations) else s.text}
                     for i, s in enumerate(segments_in)
                 ]})
@@ -214,9 +220,11 @@ async def dub_video(request: DubRequest):
 
     if request.video_id:
         try:
-            cache_video(request.video_id, {"segments": [
+            cache_video(request.video_id, {"source_lang": request.source_lang, "segments": [
                 {"start": s["start"], "duration": s["duration"],
-                 "text": s["text"], "translated_text": s["translated_text"]}
+                 "text": s["text"],
+                 "source": "youtube_captions",
+                 "translated_text": s["translated_text"]}
                 for s in translated_segments
             ]})
         except Exception:
