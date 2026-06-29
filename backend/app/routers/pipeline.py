@@ -138,6 +138,8 @@ async def process_video(request: ProcessRequest):
 
         # 2. TTS in parallel — all segments at once, stream each as it finishes.
         # Frontend places segments by index so out-of-order delivery is fine.
+        # CHANGED: log the dubbing (vocalizing) stage so progress is traceable.
+        logger.info("/process stage=dubbing (TTS) %d segments (video_id=%s)", total, request.video_id)
         tts_failures = 0
 
         _bracket_only = re.compile(r"^\s*(\[.*?\]\s*)+$")

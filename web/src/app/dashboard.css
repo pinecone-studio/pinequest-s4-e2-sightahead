@@ -456,6 +456,63 @@
   box-shadow: 0 24px 70px -34px rgba(0, 0, 0, 0.85);
 }
 
+/* CHANGED: staged "process" loadbar overlay shown over the video frame while
+   the transcript pipeline (fetch → translate → dub) runs. */
+.dashboard-process-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(7, 12, 11, 0.74);
+  backdrop-filter: blur(2px);
+  border-radius: 6px;
+}
+
+.dashboard-process-label {
+  color: #f4eed6;
+  font:
+    600 14px var(--font-onest),
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.03em;
+}
+
+.dashboard-process-track {
+  width: min(60%, 260px);
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(128, 144, 118, 0.22);
+  overflow: hidden;
+}
+
+.dashboard-process-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: #b86830;
+  transition: width 0.3s ease;
+}
+
+/* Indeterminate bar for stages with no known count (e.g. fetching). */
+.dashboard-process-fill.is-indeterminate {
+  width: 40%;
+  animation: dashboardProcessSlide 1.1s ease-in-out infinite;
+}
+
+@keyframes dashboardProcessSlide {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
 .dashboard-youtube-container,
 .dashboard-video-loading {
   position: absolute;

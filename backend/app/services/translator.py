@@ -18,13 +18,13 @@ def _openai_translate(text: str, source_lang: str, target_lang: str) -> str:
     from app.config import OPENAI_API_KEY
 
     client = OpenAI(api_key=OPENAI_API_KEY)
-    model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini")
+    model = os.getenv("gpt-4o-mini")
     prompt = (
         f"Translate the following text from {source_lang} to {target_lang}. "
         f"Return ONLY the translated text, no explanations.\n\n{text}"
     )
     response = client.chat.completions.create(
-        model=model,
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content.strip()

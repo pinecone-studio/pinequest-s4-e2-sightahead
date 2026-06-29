@@ -17,7 +17,7 @@ import { AssistantChat } from "@/_comps/dashboard/AssistantChat";
 import { DashboardHeader } from "@/_comps/dashboard/DashboardHeader";
 import { useYouTubePlayer } from "@/_comps/dashboard/useYouTubePlayer";
 import { useDubAudio } from "@/_comps/dashboard/useDubAudio";
-import { VideoPane } from "@/_comps/dashboard/VideoPane";
+import { VideoPane, type ProcessStage } from "@/_comps/dashboard/VideoPane";
 import { SubtitlePane } from "@/_comps/dashboard/SubtitlePane";
 import ChannelView from "@/_comps/youtube-search/ChannelView";
 import SearchResults from "@/_comps/youtube-search/SearchResults";
@@ -308,6 +308,37 @@ export default function DashboardView({
     processedSegments,
     sourceLang,
   );
+
+  // CHANGED: derive a staged "process" status + progress for the frame overlay.
+  // fetch transcript → translate (subtitles) → dub (only when toggled on).
+  const translatedCount = translatedSubs.segments.filter(
+    (s) => s.translated_text,
+  ).length;
+  let processStage: ProcessStage = "idle";
+  let processProgress: number | null = null;
+  if (videoId) {
+    if (processingError || translatedSubs.error) {
+      processStage = "error";
+    } else if (processingLoading) {
+      processStage = "fetching"; // RapidAPI transcript fetch — no count yet
+    } else if (translatedSubs.loading) {
+      processStage = "translating";
+      processProgress = processedSegments.length
+        ? translatedCount / processedSegments.length
+        : null;
+    } else if (
+      dub.step === "fetching" ||
+      dub.step === "translating" ||
+      dub.step === "tts"
+    ) {
+      processStage = "dubbing";
+      processProgress = dub.progress
+        ? dub.progress.done / dub.progress.total
+        : null;
+    } else if (processedSegments.length > 0) {
+      processStage = "ready";
+    }
+  }
   const recommendationSearchQuery = useMemo(
     () => recommendationQuery(activeItem),
     [activeItem],
@@ -778,6 +809,9 @@ export default function DashboardView({
           voiceGender={voiceGender}
           onToggleDub={handleToggleDub}
           onToggleGender={() => setVoiceGender((g) => (g === "male" ? "female" : "male"))}
+          // CHANGED: staged process overlay status for the frame loadbar
+          processStage={processStage}
+          processProgress={processProgress}
         />
         {assistantOpen ? (
           <AssistantChat
