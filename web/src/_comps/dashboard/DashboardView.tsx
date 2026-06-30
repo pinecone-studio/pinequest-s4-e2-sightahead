@@ -48,6 +48,7 @@ import type {
 } from "@/lib/youtube-search";
 import { useProcessedVideo } from "./useProcessedVideo";
 import { useTranslatedSubtitles } from "./useTranslatedSubtitles";
+import { LiveSubtitleBox } from "./LiveSubtitleBox";
 import { toast } from "@/_comps/ui/Sonner";
 
 export type DashboardVideoSelection = {
@@ -778,6 +779,13 @@ export default function DashboardView({
           voiceGender={voiceGender}
           onToggleDub={handleToggleDub}
           onToggleGender={() => setVoiceGender((g) => (g === "male" ? "female" : "male"))}
+          liveSubtitle={
+            videoId ? (
+              <LiveSubtitleBox
+                onDubActive={(active) => player.setVolume(active ? 15 : 100)}
+              />
+            ) : null
+          }
         />
         {assistantOpen ? (
           <AssistantChat

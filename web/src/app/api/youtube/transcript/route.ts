@@ -1,10 +1,13 @@
 import type { NextRequest } from "next/server";
+import { fetchCaptions } from "@/lib/captions";
 import { fetchRapidTranscript } from "@/lib/rapid-transcript";
 
-// Fetches the transcript SERVER-SIDE via the RapidAPI scraper (see
-// lib/rapid-transcript.ts). RapidAPI scrapes from its own infra, so the old
-// YouTube datacenter IP-block doesn't apply, and keeping it server-side hides
-// the API key and avoids CORS. The client renders the returned segments.
+// Fetches the transcript SERVER-SIDE.
+//
+// Primary:  fetchCaptions (captions.ts) — InnerTube ANDROID → npm package →
+//           watch-page scrape. Free, no quota.
+// Fallback: RapidAPI scraper (lib/rapid-transcript.ts) — used only when the
+//           primary path fails and the key is configured.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -12,10 +15,7 @@ const LOG = "[transcript-route]";
 
 export async function GET(request: NextRequest) {
   const videoId = request.nextUrl.searchParams.get("videoId")?.trim();
-  console.log(`${LOG} ← request received`, {
-    videoId,
-    url: request.nextUrl.pathname + request.nextUrl.search,
-  });
+  console.log(`${LOG} ← request received`, { videoId });
 
   if (!videoId) {
     console.warn(`${LOG} ✗ rejected: missing videoId`);
@@ -23,41 +23,69 @@ export async function GET(request: NextRequest) {
   }
 
   const startedAt = Date.now();
+
+  // ── Primary: captions.ts (free, no quota) ───────────────────────────────
+  try {
+    const result = await fetchCaptions(videoId, "en");
+
+    if (result.segments.length > 0) {
+      console.log(`${LOG} → 200 via ${result.strategy}`, {
+        videoId,
+        source_lang: result.languageCode,
+        segmentCount: result.segments.length,
+        tookMs: Date.now() - startedAt,
+      });
+      return Response.json({
+        video_id: videoId,
+        source_lang: result.languageCode,
+        segments: result.segments,
+      });
+    }
+
+    console.warn(`${LOG} primary returned 0 segments — trying RapidAPI fallback`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`${LOG} primary failed: ${msg} — trying RapidAPI fallback`);
+  }
+
+  // ── Fallback: RapidAPI ───────────────────────────────────────────────────
+  const rapidKey =
+    process.env.RAPIDAPI_KEY ?? process.env.NEXT_PUBLIC_RAPID_API_KEY ?? "";
+  if (!rapidKey) {
+    return Response.json(
+      { error: "No transcript available for this video.", videoId, detail: "AllStrategiesFailed" },
+      { status: 502 },
+    );
+  }
+
   try {
     const { segments, source_lang } = await fetchRapidTranscript(videoId);
 
     if (!segments.length) {
-      console.warn(`${LOG} ✗ empty transcript`, { videoId });
+      console.warn(`${LOG} ✗ RapidAPI also returned 0 segments`, { videoId });
       return Response.json(
-        {
-          error: "No transcript available for this video.",
-          videoId,
-          detail: "EmptyTranscript",
-        },
+        { error: "No transcript available for this video.", videoId, detail: "EmptyTranscript" },
         { status: 502 },
       );
     }
 
-    console.log(`${LOG} → responding 200`, {
+    console.log(`${LOG} → 200 via RapidAPI fallback`, {
       videoId,
       source_lang,
       segmentCount: segments.length,
       tookMs: Date.now() - startedAt,
-      firstSegment: segments[0] ?? null,
-      lastSegment: segments.at(-1) ?? null,
     });
-
     return Response.json({ video_id: videoId, source_lang, segments });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Transcript unavailable.";
-    console.error(`${LOG} ✗ RapidAPI fetch failed`, {
+    console.error(`${LOG} ✗ all strategies failed`, {
       videoId,
       tookMs: Date.now() - startedAt,
       message,
     });
     return Response.json(
-      { error: message, videoId, detail: "RapidApiError" },
+      { error: message, videoId, detail: "AllStrategiesFailed" },
       { status: 502 },
     );
   }

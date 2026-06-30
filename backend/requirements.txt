@@ -18,5 +18,8 @@ mutagen
 # Audio (duration only — pydub/azure SDK not used; TTS calls Azure REST via httpx)
 mutagen
 
+# WebSocket client (Gemini 3.5 Live Translate + Azure TTS streaming)
+websockets
+
 # FastAPI extras
 python-multipart

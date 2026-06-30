@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings, AUDIO_DIR
 from app.routers import assistant, auth, summary, video, voice, pipeline, translate
 from app.routers.tts import router as tts_router
+from app.routers.live_translate import router as live_translate_router
 
 
 # Configure application logging so app loggers (e.g. the /process pipeline)
@@ -47,6 +48,9 @@ app.include_router(assistant.router)
 
 # TTS synthesis endpoint
 app.include_router(tts_router)
+
+# Gemini 3.5 Live Translate WebSocket endpoint
+app.include_router(live_translate_router)
 
 
 @app.get("/", tags=["system"])

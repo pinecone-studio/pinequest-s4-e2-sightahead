@@ -14,6 +14,7 @@ type VideoPaneProps = {
   speaker: string
   sourceLine?: string
   subtitle?: ReactNode
+  liveSubtitle?: ReactNode
   dubMode?: "mongolian" | "original"
   dubStatus?: DubStep
   dubProgress?: { done: number; total: number } | null
@@ -56,6 +57,7 @@ export function VideoPane(props: VideoPaneProps) {
         hasVideo={props.hasVideo}
       />
       {props.subtitle}
+      {props.liveSubtitle}
       {props.hasVideo && props.onToggleDub && (
         <div className="dashboard-dub-toggle">
           <div className="dashboard-dub-buttons">
