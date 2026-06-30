@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { fetchTranscript, streamProcess, base64ToBlobUrl, type StreamedSegment } from "@/lib/process-stream"
-import type { Segment } from "@/lib/backend-api"
+import { fetchCachedVideoTranscript, type Segment } from "@/lib/backend-api"
 
 export type DubStep = "idle" | "fetching" | "translating" | "tts" | "ready" | "error"
 
@@ -43,23 +43,29 @@ export function useDubAudio(
   useEffect(() => {
     if (!videoId || !enabled) return
 
+    let active = true
+    const controller = new AbortController()
+
     audioRef.current?.pause()
     audioRef.current = null
     activeIdxRef.current = -1
     abortRef.current?.abort()
+    abortRef.current = controller
     blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
     blobUrlsRef.current = []
-    setSegments([])
-    setError(null)
-    setProgress(null)
-    setStep("fetching")
-
-    const controller = new AbortController()
-    abortRef.current = controller
+    queueMicrotask(() => {
+      if (!active || controller.signal.aborted) return
+      setSegments([])
+      setError(null)
+      setProgress(null)
+      setStep("fetching")
+    })
 
     void (async () => {
       try {
-        const transcript = await fetchTranscript(videoId)
+        const transcript =
+          (await fetchCachedVideoTranscript(videoId).catch(() => null)) ??
+          (await fetchTranscript(videoId))
         if (controller.signal.aborted) return
 
         if (!transcript.segments.length) {
@@ -69,19 +75,14 @@ export function useDubAudio(
         }
 
         const total = transcript.segments.length
-        const built: DubSegment[] = transcript.segments.map((s) => ({
-          start: s.start,
-          duration: s.duration,
-          translatedText: null,
-          blobUrl: null,
-        }))
+        const built: DubSegment[] = []
         setStep("translating")
         setProgress({ done: 0, total })
 
         let ttsCompleted = 0
 
         await streamProcess(
-          { source_lang: transcript.source_lang, segments: transcript.segments, gender },
+          { video_id: videoId, source_lang: transcript.source_lang, segments: transcript.segments, gender },
           {
             onSegment: (seg: StreamedSegment, index: number, segTotal: number) => {
               if (controller.signal.aborted) return
@@ -94,7 +95,11 @@ export function useDubAudio(
                 translatedText: seg.translated_text ?? null,
                 blobUrl,
               }
-              setSegments([...built])
+              setSegments(
+                built
+                  .filter(Boolean)
+                  .sort((a, b) => a.start - b.start),
+              )
               setProgress({ done: ttsCompleted, total: segTotal })
               if (index === 0) setStep("tts")
             },
@@ -126,6 +131,7 @@ export function useDubAudio(
     })()
 
     return () => {
+      active = false
       controller.abort()
       if (abortRef.current === controller) abortRef.current = null
     }
@@ -134,6 +140,7 @@ export function useDubAudio(
   // Clear everything when dub mode is turned off
   useEffect(() => {
     if (enabled) return
+    let active = true
     abortRef.current?.abort()
     abortRef.current = null
     audioRef.current?.pause()
@@ -141,10 +148,16 @@ export function useDubAudio(
     activeIdxRef.current = -1
     blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
     blobUrlsRef.current = []
-    setSegments([])
-    setError(null)
-    setProgress(null)
-    setStep("idle")
+    queueMicrotask(() => {
+      if (!active) return
+      setSegments([])
+      setError(null)
+      setProgress(null)
+      setStep("idle")
+    })
+    return () => {
+      active = false
+    }
   }, [enabled])
 
   // Apply playback rate changes to currently playing audio
@@ -190,7 +203,7 @@ export function useDubAudio(
     audio.playbackRate = playbackRate
     audioRef.current = audio
     audio.play().catch((e) => console.warn("[DubAudio] play() blocked:", e))
-  }, [currentTime, segments, enabled])
+  }, [currentTime, segments, enabled, playbackRate])
 
   // Build translated segments for SubtitlePane when dub mode is active
   const translatedSegments: Segment[] = segments
