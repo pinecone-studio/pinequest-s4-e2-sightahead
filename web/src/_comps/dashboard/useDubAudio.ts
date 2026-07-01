@@ -39,9 +39,13 @@ export function useDubAudio(
     }
   }, [])
 
-  // Fetch transcript + stream translate/TTS when enabled or gender changes
+  // Build the dub in the BACKGROUND as soon as a video is selected (or the voice
+  // changes) — independent of `enabled` — so the dub is ready (or already
+  // streaming) the instant the user toggles it on. Playback and the reported
+  // status stay gated on `enabled` (below), so the original audio keeps playing
+  // and the UI stays quiet until the user actually switches to the dub.
   useEffect(() => {
-    if (!videoId || !enabled) return
+    if (!videoId) return
 
     audioRef.current?.pause()
     audioRef.current = null
@@ -129,22 +133,16 @@ export function useDubAudio(
       controller.abort()
       if (abortRef.current === controller) abortRef.current = null
     }
-  }, [videoId, enabled, gender])
+  }, [videoId, gender])
 
-  // Clear everything when dub mode is turned off
+  // Pause (but DON'T discard) the dub when the user switches back to the original
+  // audio, so re-enabling plays instantly from the already-built segments. The
+  // background build is left running/complete and its blobs are kept alive.
   useEffect(() => {
     if (enabled) return
-    abortRef.current?.abort()
-    abortRef.current = null
     audioRef.current?.pause()
     audioRef.current = null
     activeIdxRef.current = -1
-    blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
-    blobUrlsRef.current = []
-    setSegments([])
-    setError(null)
-    setProgress(null)
-    setStep("idle")
   }, [enabled])
 
   // Apply playback rate changes to currently playing audio
@@ -206,5 +204,15 @@ export function useDubAudio(
       audio_b64: null,
     }))
 
-  return { step, error, progress, segmentCount: segments.length, translatedSegments }
+  // Gate the reported status on `enabled`: while the dub builds silently in the
+  // background (original audio playing), the UI shows nothing dub-related. The
+  // instant the user toggles on, this reflects the real (often already "ready")
+  // build state for an instant switch.
+  return {
+    step: enabled ? step : "idle",
+    error: enabled ? error : null,
+    progress: enabled ? progress : null,
+    segmentCount: segments.length,
+    translatedSegments,
+  }
 }
