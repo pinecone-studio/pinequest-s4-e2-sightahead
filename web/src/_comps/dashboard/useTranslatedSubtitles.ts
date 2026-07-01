@@ -1,21 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Segment } from "@/lib/backend-api";
+import {
+  saveCachedVideoTranscript,
+  TRANSLATION_CACHE_VERSION,
+  type Segment,
+} from "@/lib/backend-api";
 import {
   streamProcess,
   type StreamedSegment,
   type TranscriptSegment,
 } from "@/lib/process-stream";
 
-// Takes the already-fetched (RapidAPI) caption segments, sends them to the
-// backend /process pipeline in TRANSLATE-ONLY mode (no TTS), and returns the
-// same segments with `translated_text` filled in — for the SubtitlePane to show
-// Mongolian instead of the original English. Audio dubbing stays in useDubAudio.
 export function useTranslatedSubtitles(
   videoId: string,
   sourceSegments: Segment[],
   sourceLang: string = "en",
+  translationVersion: string | null = null,
 ) {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,39 +25,62 @@ export function useTranslatedSubtitles(
 
   useEffect(() => {
     if (!videoId || sourceSegments.length === 0) {
-      setSegments([]);
-      setLoading(false);
-      setError("");
+      queueMicrotask(() => {
+        setSegments([]);
+        setLoading(false);
+        setError("");
+      });
       return;
     }
 
     let active = true;
     const controller = new AbortController();
-    setSegments([]);
-    setError("");
-    setLoading(true);
+    const canReuseTranslatedText = translationVersion === TRANSLATION_CACHE_VERSION;
+    const cachedSegments: Segment[] = canReuseTranslatedText
+      ? sourceSegments
+          .filter((segment) => segment.translated_text?.trim())
+          .map((segment) => ({
+            start: segment.start,
+            duration: segment.duration,
+            text: segment.text,
+            source: "youtube_captions",
+            translated_text: segment.translated_text,
+            audio_path: null,
+            audio_ms: null,
+            audio_b64: null,
+          }))
+      : [];
 
-    // Pre-build the result array so translations can be placed by index as the
-    // SSE stream delivers them (out-of-order delivery is fine).
-    const built: Segment[] = sourceSegments.map((s) => ({
-      start: s.start,
-      duration: s.duration,
-      text: s.text,
-      source: "youtube_captions",
-      translated_text: null,
-      audio_path: null,
-      audio_ms: null,
-      audio_b64: null,
+    if (cachedSegments.length > 0 && cachedSegments.length === sourceSegments.length) {
+      queueMicrotask(() => {
+        if (!active) return;
+        setSegments(cachedSegments);
+        setError("");
+        setLoading(false);
+      });
+      return () => {
+        active = false;
+        controller.abort();
+      };
+    }
+
+    queueMicrotask(() => {
+      if (!active) return;
+      setSegments([]);
+      setError("");
+      setLoading(true);
+    });
+
+    const built: Segment[] = [];
+    const payload: TranscriptSegment[] = sourceSegments.map((segment) => ({
+      start: segment.start,
+      duration: segment.duration,
+      text: segment.text,
     }));
 
-    const payload: TranscriptSegment[] = sourceSegments.map((s) => ({
-      start: s.start,
-      duration: s.duration,
-      text: s.text,
-    }));
+    const sortedBuilt = () => built.filter(Boolean).sort((a, b) => a.start - b.start);
 
-    // Schedule a batched flush — debounced at 80ms so rapid SSE bursts (e.g.
-    // all 40 segments of a batch arriving in <10ms) collapse into 1 re-render.
+    // Debounced flush: first segment fires immediately, subsequent ones batch at 80ms.
     const scheduleFlush = (snapshot: Segment[], immediate: boolean) => {
       if (flushRef.current) clearTimeout(flushRef.current);
       if (immediate) {
@@ -73,22 +97,39 @@ export function useTranslatedSubtitles(
       {
         onSegment: (seg: StreamedSegment, index: number) => {
           if (!active) return;
-          if (index >= 0 && index < built.length) {
-            built[index] = {
-              ...built[index],
-              translated_text: seg.translated_text || null,
-            };
-          }
+          built[index] = {
+            start: seg.offset,
+            duration: seg.duration,
+            text: seg.text,
+            source: "youtube_captions",
+            translated_text: seg.translated_text || null,
+            audio_path: null,
+            audio_ms: null,
+            audio_b64: null,
+          };
           received++;
-          // Flush immediately for the very first translated segment so the
-          // subtitle pane appears without waiting for the debounce window.
-          scheduleFlush(built, received === 1);
+          scheduleFlush(sortedBuilt(), received === 1);
         },
         onDone: () => {
           if (!active) return;
           if (flushRef.current) clearTimeout(flushRef.current);
-          setSegments([...built]);
+          const finalSegments = sortedBuilt();
+          setSegments(finalSegments);
           setLoading(false);
+          void saveCachedVideoTranscript({
+            video_id: videoId,
+            source_lang: sourceLang,
+            translation_version: TRANSLATION_CACHE_VERSION,
+            translation_mode: "subtitle",
+            segments: finalSegments.map((segment) => ({
+              start: segment.start,
+              duration: segment.duration,
+              text: segment.text,
+              translated_text: segment.translated_text,
+            })),
+          }).catch((saveError) => {
+            console.warn("Translated transcript cache save failed:", saveError);
+          });
         },
         onError: (msg) => {
           if (!active) return;
@@ -108,7 +149,7 @@ export function useTranslatedSubtitles(
       controller.abort();
       if (flushRef.current) clearTimeout(flushRef.current);
     };
-  }, [videoId, sourceSegments, sourceLang]);
+  }, [videoId, sourceSegments, sourceLang, translationVersion]);
 
   return { segments, loading, error };
 }

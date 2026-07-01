@@ -214,6 +214,7 @@ export default function DashboardView({
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState("");
   const playbackRef = useRef({ time: 0, duration: 0 });
+  const appliedDubVolumeModeRef = useRef<typeof dubMode | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchChannelTabs = useChannelTabResults(
     selectedSearchChannel,
@@ -303,6 +304,7 @@ export default function DashboardView({
     loading: processingLoading,
     error: processingError,
     sourceLang,
+    translationVersion,
   } = useProcessedVideo(videoId);
   // Translate the fetched captions (no TTS) so subtitles show Mongolian by
   // default; audio dubbing remains handled by useDubAudio when toggled on.
@@ -310,6 +312,7 @@ export default function DashboardView({
     videoId,
     processedSegments,
     sourceLang,
+    translationVersion,
   );
 
   // CHANGED: derive a staged "process" status + progress for the frame overlay.
@@ -388,6 +391,9 @@ export default function DashboardView({
   }, [player.duration, player.time]);
 
   useEffect(() => {
+    if (appliedDubVolumeModeRef.current === dubMode) return;
+    appliedDubVolumeModeRef.current = dubMode;
+
     if (dubMode === "mongolian") {
       player.unMute();
       player.setVolume(ytVolume);

@@ -623,7 +623,7 @@ async def dub_video(request: DubRequest):
     for i, seg in enumerate(translated):
         mn_text = seg.translated_text
         try:
-            audio_bytes = synthesize(mn_text, {"voice": request.voice, "gender": request.gender})
+            audio_bytes = synthesize(mn_text, {"gender": request.gender})
             audio_ms = audio_duration_ms_from_bytes(audio_bytes)
             audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
         except Exception:
