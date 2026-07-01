@@ -5,8 +5,27 @@
 
 import { useState } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_RAPID_API_URL!;
-const API_KEY = process.env.NEXT_PUBLIC_RAPID_API_KEY!;
+// New provider: youtube-transcriptor — GET with the video_id as a query param.
+const API_HOST = process.env.RAPID_API_HOST;
+const API_KEY = process.env.RAPID_API_KEY;
+
+// This provider takes video_id (not a URL), so pull the 11-char ID out of
+// whatever the user pasted (full URL, youtu.be, shorts, or a raw ID).
+function extractVideoId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  try {
+    const u = new URL(trimmed);
+    const v = u.searchParams.get("v");
+    if (v) return v;
+    const last = u.pathname.split("/").filter(Boolean).at(-1);
+    if (last && /^[a-zA-Z0-9_-]{11}$/.test(last)) return last;
+  } catch {
+    // not a URL — fall through
+  }
+  return null;
+}
 
 export default function Page() {
   const [url, setUrl] = useState("");
@@ -19,18 +38,24 @@ export default function Page() {
       setError("Paste a YouTube URL first");
       return;
     }
+    const videoId = extractVideoId(url);
+    if (!videoId) {
+      setError("Could not parse a video ID from that input");
+      return;
+    }
     setLoading(true);
     setError("");
     setTranscript("");
     try {
-      const res = await fetch(API_URL, {
-        method: "POST",
+      const endpoint = `https://${API_HOST}/transcript?video_id=${encodeURIComponent(
+        videoId,
+      )}&lang=en`;
+      const res = await fetch(endpoint, {
+        method: "GET",
         headers: {
           "x-rapidapi-key": API_KEY,
-          "x-rapidapi-host": "video-transcript-scraper.p.rapidapi.com",
-          "Content-Type": "application/json",
+          "x-rapidapi-host": API_HOST,
         },
-        body: JSON.stringify({ video_url: url.trim() }),
       });
       const text = await res.text();
       if (!res.ok) {

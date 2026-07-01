@@ -103,7 +103,9 @@ function firstNum(...values: Array<number | undefined>): number | undefined {
   return values.find((value) => value !== undefined);
 }
 
-function transcriptItems(body: RapidResponse | RapidTranscriptItem[]): RapidTranscriptItem[] {
+function transcriptItems(
+  body: RapidResponse | RapidTranscriptItem[],
+): RapidTranscriptItem[] {
   if (Array.isArray(body)) return body;
   const candidates = [
     body.data?.transcript,
@@ -149,7 +151,9 @@ function candidateBaseUrls(): string[] {
   ]);
 }
 
-function candidateRequests(videoId: string): Array<{ url: string; init: RequestInit }> {
+function candidateRequests(
+  videoId: string,
+): Array<{ url: string; init: RequestInit }> {
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const headers = {
     "x-rapidapi-key": RAPID_KEY,
@@ -171,12 +175,22 @@ function candidateRequests(videoId: string): Array<{ url: string; init: RequestI
   }
 
   return candidateBaseUrls().flatMap((baseUrl) => [
-    { url: withQuery(baseUrl, { video_id: videoId }), init: { method: "GET", headers } },
+    {
+      url: withQuery(baseUrl, { video_id: videoId }),
+      init: { method: "GET", headers },
+    },
     { url: withQuery(baseUrl, { videoId }), init: { method: "GET", headers } },
-    { url: withQuery(baseUrl, { url: videoUrl }), init: { method: "GET", headers } },
+    {
+      url: withQuery(baseUrl, { url: videoUrl }),
+      init: { method: "GET", headers },
+    },
     {
       url: baseUrl,
-      init: { method: "POST", headers, body: JSON.stringify({ video_id: videoId }) },
+      init: {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ video_id: videoId }),
+      },
     },
     {
       url: baseUrl,
@@ -184,11 +198,19 @@ function candidateRequests(videoId: string): Array<{ url: string; init: RequestI
     },
     {
       url: baseUrl,
-      init: { method: "POST", headers, body: JSON.stringify({ url: videoUrl }) },
+      init: {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ url: videoUrl }),
+      },
     },
     {
       url: baseUrl,
-      init: { method: "POST", headers, body: JSON.stringify({ video_url: videoUrl }) },
+      init: {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ video_url: videoUrl }),
+      },
     },
   ]);
 }
@@ -196,7 +218,9 @@ function candidateRequests(videoId: string): Array<{ url: string; init: RequestI
 function toSegments(items: RapidTranscriptItem[]): RapidSegment[] {
   const segs: RapidSegment[] = items
     .map((item) => {
-      const text = String(item.text ?? item.subtitle ?? item.sentence ?? item.line ?? "")
+      const text = String(
+        item.text ?? item.subtitle ?? item.sentence ?? item.line ?? "",
+      )
         .replace(/\s+/g, " ")
         .trim();
       const start =
@@ -230,7 +254,9 @@ function toSegments(items: RapidTranscriptItem[]): RapidSegment[] {
   for (let index = 0; index < segs.length; index++) {
     if (!segs[index].duration) {
       const next = segs[index + 1];
-      segs[index].duration = next ? Math.max(0.5, next.start - segs[index].start) : 2;
+      segs[index].duration = next
+        ? Math.max(0.5, next.start - segs[index].start)
+        : 2;
     }
   }
 
@@ -240,7 +266,7 @@ function toSegments(items: RapidTranscriptItem[]): RapidSegment[] {
 export async function fetchRapidTranscript(
   videoId: string,
 ): Promise<{ segments: RapidSegment[]; source_lang: string }> {
-  if (!RAPID_URL || !RAPID_KEY) {
+  if (!RAPID_HOST || !RAPID_KEY) {
     throw new Error(
       "RapidAPI not configured: set RAPID_API_KEY and either RAPID_API_URL " +
         "or RAPID_API_HOST in the server environment.",
