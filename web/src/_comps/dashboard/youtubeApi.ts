@@ -10,7 +10,11 @@ export type YouTubePlayer = {
   pauseVideo?: () => void
   playVideo?: () => void
   seekTo?: (seconds: number, allowSeekAhead: boolean) => void
+  loadModule?: (module: string) => void
   unloadModule?: (module: string) => void
+  setPlaybackQuality?: (quality: string) => void
+  getPlaybackQuality?: () => string
+  getAvailableQualityLevels?: () => string[]
 }
 
 export type YouTubeEvent = {

@@ -17,8 +17,9 @@ export function useDubAudio(
   videoId: string,
   currentTime: number,
   enabled: boolean,
-  gender: "male" | "female",
+  voiceId: string,
   playbackRate: number = 1,
+  volume: number = 100,
 ) {
   const [segments, setSegments] = useState<DubSegment[]>([])
   const [step, setStep] = useState<DubStep>("idle")
@@ -27,11 +28,14 @@ export function useDubAudio(
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const activeIdxRef = useRef<number>(-1)
+  const prevTimeRef = useRef<number>(0)
   const abortRef = useRef<AbortController | null>(null)
   const blobUrlsRef = useRef<string[]>([])
+  const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
+      if (flushRef.current) clearTimeout(flushRef.current)
       audioRef.current?.pause()
       audioRef.current = null
       abortRef.current?.abort()
@@ -39,7 +43,7 @@ export function useDubAudio(
     }
   }, [])
 
-  // Fetch transcript + stream translate/TTS when enabled or gender changes
+  // Fetch transcript + stream translate/TTS when enabled or voice changes
   useEffect(() => {
     if (!videoId || !enabled) return
 
@@ -81,7 +85,7 @@ export function useDubAudio(
         let ttsCompleted = 0
 
         await streamProcess(
-          { source_lang: transcript.source_lang, segments: transcript.segments, gender },
+          { video_id: videoId, source_lang: transcript.source_lang, segments: transcript.segments, voice: voiceId },
           {
             onSegment: (seg: StreamedSegment, index: number, segTotal: number) => {
               if (controller.signal.aborted) return
@@ -94,12 +98,23 @@ export function useDubAudio(
                 translatedText: seg.translated_text ?? null,
                 blobUrl,
               }
-              setSegments([...built])
-              setProgress({ done: ttsCompleted, total: segTotal })
-              if (index === 0) setStep("tts")
+              // First segment: flush immediately so playback can start without delay.
+              // Subsequent segments: batch into a single render every 80ms.
+              if (ttsCompleted === 1) {
+                if (flushRef.current) clearTimeout(flushRef.current)
+                setSegments([...built])
+                setProgress({ done: 1, total: segTotal })
+                setStep("tts")
+              } else {
+                setProgress({ done: ttsCompleted, total: segTotal })
+                if (flushRef.current) clearTimeout(flushRef.current)
+                flushRef.current = setTimeout(() => setSegments([...built]), 80)
+              }
             },
             onDone: () => {
               if (controller.signal.aborted) return
+              if (flushRef.current) clearTimeout(flushRef.current)
+              setSegments([...built])
               if (blobUrlsRef.current.length === 0) {
                 setError("Azure TTS audio үүсгэж чадсангүй. Backend credentials шалгана уу.")
                 setStep("error")
@@ -128,8 +143,9 @@ export function useDubAudio(
     return () => {
       controller.abort()
       if (abortRef.current === controller) abortRef.current = null
+      if (flushRef.current) clearTimeout(flushRef.current)
     }
-  }, [videoId, enabled, gender])
+  }, [videoId, enabled, voiceId])
 
   // Clear everything when dub mode is turned off
   useEffect(() => {
@@ -147,14 +163,27 @@ export function useDubAudio(
     setStep("idle")
   }, [enabled])
 
-  // Apply playback rate changes to currently playing audio
+  // Sync playbackRate and volume to currently playing audio
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = playbackRate
   }, [playbackRate])
 
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = Math.max(0, Math.min(1, volume / 100))
+  }, [volume])
+
   // Sync audio to video playback time
   useEffect(() => {
     if (!enabled || segments.length === 0) return
+
+    // Detect seek: if time jumped more than 1.5s, force segment re-evaluation
+    const jumped = Math.abs(currentTime - prevTimeRef.current) > 1.5
+    prevTimeRef.current = currentTime
+    if (jumped) {
+      audioRef.current?.pause()
+      audioRef.current = null
+      activeIdxRef.current = -1
+    }
 
     const idx = segments.findIndex(
       (s) => currentTime >= s.start && currentTime < s.start + s.duration,
@@ -170,9 +199,14 @@ export function useDubAudio(
         if (!seg.blobUrl) return
         const audio = new Audio(seg.blobUrl)
         audio.currentTime = 0
+        audio.volume = Math.max(0, Math.min(1, volume / 100))
         audio.playbackRate = playbackRate
+        audio.onended = () => { if (audioRef.current === audio) audioRef.current = null }
         audioRef.current = audio
-        audio.play().catch((e) => console.warn("[DubAudio] play() blocked:", e))
+        audio.play().catch((e) => {
+          console.warn("[DubAudio] play() blocked:", e)
+          if (audioRef.current === audio) audioRef.current = null
+        })
       }
       return
     }
@@ -187,9 +221,14 @@ export function useDubAudio(
 
     const audio = new Audio(seg.blobUrl)
     audio.currentTime = 0
+    audio.volume = Math.max(0, Math.min(1, volume / 100))
     audio.playbackRate = playbackRate
+    audio.onended = () => { if (audioRef.current === audio) audioRef.current = null }
     audioRef.current = audio
-    audio.play().catch((e) => console.warn("[DubAudio] play() blocked:", e))
+    audio.play().catch((e) => {
+      console.warn("[DubAudio] play() blocked:", e)
+      if (audioRef.current === audio) audioRef.current = null
+    })
   }, [currentTime, segments, enabled])
 
   // Build translated segments for SubtitlePane when dub mode is active

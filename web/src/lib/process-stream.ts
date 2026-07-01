@@ -1,7 +1,12 @@
 // Client-side transcript fetch (Vercel route) + SSE streaming of the backend
 // /process pipeline (translate + TTS), yielding one segment at a time.
 
-export type TranscriptSegment = { start: number; duration: number; text: string };
+export type TranscriptSegment = {
+  start: number;
+  duration: number;
+  text: string;
+  translated_text?: string | null;
+};
 export type TranscriptResponse = {
   video_id: string;
   source_lang: string;
@@ -73,9 +78,11 @@ export async function fetchTranscript(
 // handlers as each translated + dubbed segment arrives.
 export async function streamProcess(
   payload: {
+    video_id?: string;
     source_lang: string;
     segments: TranscriptSegment[];
     gender?: string;
+    voice?: string;
     tts?: boolean; // false = translate-only (subtitles), no audio synthesis
   },
   handlers: StreamHandlers,
@@ -84,6 +91,7 @@ export async function streamProcess(
   const url = backendUrl("/process");
   console.log("[streamProcess] → sending transcript to backend", {
     url,
+    videoId: payload.video_id,
     sourceLang: payload.source_lang,
     segmentCount: payload.segments.length,
     totalChars: payload.segments.reduce((n, s) => n + s.text.length, 0),
@@ -118,6 +126,7 @@ export async function streamProcess(
   let buffer = "";
 
   while (true) {
+    if (signal?.aborted) { reader.cancel(); break; }
     const { done, value } = await reader.read();
     if (done) break;
 
@@ -160,9 +169,14 @@ export async function streamProcess(
 }
 
 // Decodes base64 MP3 bytes into a playable object URL.
-export function base64ToBlobUrl(b64: string, mime = "audio/mpeg"): string {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return URL.createObjectURL(new Blob([bytes], { type: mime }));
+export function base64ToBlobUrl(b64: string, mime = "audio/mpeg"): string | null {
+  try {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch (err) {
+    console.error("[base64ToBlobUrl] decode failed:", err);
+    return null;
+  }
 }

@@ -3,6 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { loadYouTubeApi, type YouTubeEvent, type YouTubePlayer } from "./youtubeApi"
 
+const QUALITY_LABELS: Record<string, string> = {
+  auto:     "Авто",
+  hd2160:   "4K",
+  hd1440:   "1440p",
+  hd1080:   "1080p",
+  hd720:    "720p",
+  large:    "480p",
+  medium:   "360p",
+  small:    "240p",
+  tiny:     "144p",
+}
+
+export { QUALITY_LABELS }
+
 export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const playerRef = useRef<YouTubePlayer | null>(null)
@@ -11,6 +25,9 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
   const [time, setTime] = useState(0)
   const [duration, setDuration] = useState(fallbackDuration)
   const [playbackRate, setPlaybackRate] = useState(1)
+  const [quality, setQualityState] = useState<string>("auto")
+  const [availableQualities, setAvailableQualities] = useState<string[]>([])
+  const [ccEnabled, setCcEnabled] = useState(false)
 
   useEffect(() => {
     if (!videoId) {
@@ -19,15 +36,20 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
         setPlaying(false)
         setTime(0)
         setDuration(fallbackDuration)
+        setQualityState("auto")
+        setAvailableQualities([])
+        setCcEnabled(false)
       })
       return
     }
 
     let mounted = true
     const pollId = setInterval(() => {
+      if (!mounted) return
       const player = playerRef.current
       if (player?.getCurrentTime) setTime(player.getCurrentTime() || 0)
       if (player?.getPlaybackRate) setPlaybackRate(player.getPlaybackRate() || 1)
+      if (player?.getPlaybackQuality) setQualityState(player.getPlaybackQuality() || "auto")
     }, 250)
 
     loadYouTubeApi().then((YT) => {
@@ -60,6 +82,8 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
             if (!mounted) return
             setPlaying(event.data === YT.PlayerState.PLAYING)
             setDuration(event.target.getDuration?.() || fallbackDuration)
+            const avail = event.target.getAvailableQualityLevels?.() ?? []
+            if (avail.length) setAvailableQualities(avail)
           },
         },
       })
@@ -84,7 +108,29 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
   const unMute = useCallback(() => playerRef.current?.unMute?.(), [])
   const setVolume = useCallback((vol: number) => playerRef.current?.setVolume?.(vol), [])
 
-  return { containerRef, ready, playing, time, duration, playbackRate, play, pause, toggle, seek, mute, unMute, setVolume }
+  const setQuality = useCallback((q: string) => {
+    playerRef.current?.setPlaybackQuality?.(q)
+    setQualityState(q)
+  }, [])
+
+  const toggleCC = useCallback(() => {
+    const player = playerRef.current
+    if (!player) return
+    setCcEnabled((prev) => {
+      if (prev) {
+        player.unloadModule?.("captions")
+      } else {
+        player.loadModule?.("captions")
+      }
+      return !prev
+    })
+  }, [])
+
+  return {
+    containerRef, ready, playing, time, duration, playbackRate,
+    quality, availableQualities, ccEnabled,
+    play, pause, toggle, seek, mute, unMute, setVolume, setQuality, toggleCC,
+  }
 }
 
 function styleIframe(iframe?: HTMLIFrameElement) {

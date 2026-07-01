@@ -1,11 +1,12 @@
 "use client"
 
-import type { ReactNode, RefObject } from "react"
+import React, { type ReactNode, type RefObject } from "react"
 import { SOURCE_LINE, type Note } from "./data"
 import { VideoFrame } from "./VideoFrame"
 import type { DubStep } from "./useDubAudio"
+import type { Voice } from "./voices"
+import { QUALITY_LABELS } from "./useYouTubePlayer"
 
-// CHANGED: staged status for the "process" loadbar overlay on the video frame.
 export type ProcessStage =
   | "idle"
   | "fetching"
@@ -27,54 +28,89 @@ type VideoPaneProps = {
   dubStatus?: DubStep
   dubProgress?: { done: number; total: number } | null
   dubError?: string | null
-  voiceGender?: "male" | "female"
+  dubAvailable?: boolean
+  voices?: Voice[]
+  selectedVoiceId?: string
+  dubVolume?: number
+  ytVolume?: number
   onToggleDub?: () => void
-  onToggleGender?: () => void
-  // CHANGED: process overlay inputs (stage + 0–1 progress, null = indeterminate)
+  onSelectVoice?: (voiceId: string) => void
+  onDubVolumeChange?: (v: number) => void
+  onYtVolumeChange?: (v: number) => void
+  quality?: string
+  availableQualities?: string[]
+  ccEnabled?: boolean
+  onSetQuality?: (q: string) => void
+  onToggleCC?: () => void
   processStage?: ProcessStage
   processProgress?: number | null
 }
 
-// CHANGED: human-readable label for each process stage.
 function processLabel(stage: ProcessStage | undefined): string {
   switch (stage) {
-    case "fetching":
-      return "Түр хүлээнэ үү... текст татаж байна (Fetching data...)"
-    case "translating":
-      return "Орчуулж байна... (Translating)"
-    case "dubbing":
-      return "Монгол дуу оруулж байна... (Vocalizing)"
-    case "error":
-      return "Алдаа гарлаа (Something went wrong)"
-    default:
-      return ""
+    case "fetching":     return "Текст татаж байна..."
+    case "translating":  return "Орчуулж байна..."
+    case "dubbing":      return "Монгол дуу үүсгэж байна..."
+    case "error":        return "Алдаа гарлаа"
+    default:             return ""
   }
 }
 
-function statusText(status: DubStep | undefined, progress: { done: number; total: number } | null | undefined): string {
-  if (!status) return ""
-  if (status === "fetching") return "Caption татаж байна..."
-  if (status === "translating") {
-    return progress ? `OpenAI орчуулж байна... ${progress.done}/${progress.total}` : "OpenAI орчуулж байна..."
-  }
-  if (status === "tts") {
-    return progress ? `Azure TTS дуб үүсгэж байна... ${progress.done}/${progress.total}` : "Azure TTS дуб үүсгэж байна..."
-  }
-  if (status === "ready") return "✓ Монгол дуб бэлэн болсон"
-  return ""
+function dubBtnLabel(status: DubStep | undefined): string {
+  if (status === "translating") return "Орчуулж байна"
+  if (status === "tts")         return "Дуб үүсгэж байна"
+  if (status === "fetching")    return "Бэлдэж байна"
+  if (status === "error")       return "Алдаа гарлаа"
+  return "Монгол Дуб"
+}
+
+function VolumeRow({
+  label, value, max = 100, onChange, disabled,
+}: {
+  label: string; value: number; max?: number
+  onChange: (v: number) => void; disabled?: boolean
+}) {
+  const pct = Math.round((value / max) * 100)
+  return (
+    <div className="dub-vol-row">
+      <span className="dub-vol-label">{label}</span>
+      <input
+        type="range" min={0} max={max} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        disabled={disabled}
+        className="dub-vol-slider"
+        style={{ "--fill": `${pct}%` } as React.CSSProperties}
+      />
+      <span className="dub-vol-value">{value}</span>
+    </div>
+  )
 }
 
 export function VideoPane(props: VideoPaneProps) {
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+
   const sortedNotes = [...props.notes].sort((a, b) => a.time - b.time)
   const isLoading = props.dubStatus === "fetching" || props.dubStatus === "translating" || props.dubStatus === "tts"
+  const isError = props.dubStatus === "error"
   const isMongolian = props.dubMode === "mongolian"
-  const dubStatusText = statusText(props.dubStatus, props.dubProgress)
-  // CHANGED: show the process overlay while the pipeline is working.
   const showProcess =
     props.processStage === "fetching" ||
     props.processStage === "translating" ||
     props.processStage === "dubbing" ||
     props.processStage === "error"
+
+  const hasVideoSettings =
+    props.onToggleCC != null ||
+    (props.availableQualities?.length ?? 0) > 0
+
+  const hasDubSettings =
+    (isMongolian || isLoading) &&
+    (
+      !!(props.voices && props.onSelectVoice) ||
+      !!(props.onDubVolumeChange && props.onYtVolumeChange)
+    )
+
+  const hasAnySettings = props.hasVideo && (hasVideoSettings || hasDubSettings)
 
   return (
     <section className="dashboard-video-pane">
@@ -84,14 +120,12 @@ export function VideoPane(props: VideoPaneProps) {
         <span>{props.sourceLine ?? SOURCE_LINE}</span>
       </div>
       <h1>{props.title}</h1>
-      {/* CHANGED: relative wrapper so the process overlay can sit over the frame */}
       <div style={{ position: "relative" }}>
         <VideoFrame
           containerRef={props.containerRef}
           ready={props.ready}
           hasVideo={props.hasVideo}
         />
-        {/* CHANGED: staged "process" loadbar overlay (fetch → translate → dub) */}
         {showProcess && (
           <div className="dashboard-process-overlay">
             <span className="dashboard-process-label">
@@ -114,53 +148,138 @@ export function VideoPane(props: VideoPaneProps) {
       </div>
       {props.subtitle}
       {props.hasVideo && props.onToggleDub && (
-        <div className="dashboard-dub-toggle">
-          <div className="dashboard-dub-buttons">
+        <div className="dub-panel">
+          <div className="dub-panel-row">
             <button
               onClick={props.onToggleDub}
-              disabled={isLoading}
-              className={`dashboard-dub-btn${isMongolian ? " active" : ""}`}
+              disabled={isLoading || props.dubAvailable === false}
+              className={[
+                "dub-main-btn",
+                isMongolian && !isError ? "is-active" : "",
+                isLoading ? "is-loading" : "",
+                isError ? "is-error" : "",
+              ].filter(Boolean).join(" ")}
             >
               {isLoading
-                ? "Бэлдэж байна..."
-                : isMongolian
-                ? "🔊 Монгол дуб"
-                : "▶ Эх бичлэг"}
+                ? <span className="dub-spinner" aria-hidden />
+                : <span className={`dub-dot${isMongolian && !isError ? " is-lit" : ""}${isError ? " is-err" : ""}`} aria-hidden />}
+              <span>{dubBtnLabel(props.dubStatus)}</span>
             </button>
 
-            {isMongolian && props.onToggleGender && (
+            {hasAnySettings && (
               <button
-                onClick={props.onToggleGender}
-                disabled={isLoading}
-                className="dashboard-dub-btn"
-                title="Хоолой солих"
+                onClick={() => setSettingsOpen((o) => !o)}
+                className={`settings-gear-btn${settingsOpen ? " is-open" : ""}`}
+                title="Тохиргоо"
+                aria-expanded={settingsOpen}
               >
-                {props.voiceGender === "male" ? "♂ Эрэгтэй" : "♀ Эмэгтэй"}
+                ⚙
               </button>
             )}
           </div>
 
-          {isLoading && props.dubProgress != null && props.dubProgress.total > 0 && (() => {
-            const dp = props.dubProgress!
-            return (
-              <div className="dashboard-dub-progress">
-                <div className="dashboard-dub-progress-track">
-                  <div
-                    className="dashboard-dub-progress-fill"
-                    style={{ width: `${Math.round((dp.done / dp.total) * 100)}%` }}
-                  />
+          {settingsOpen && (
+            <div className="settings-panel">
+              {hasVideoSettings && (
+                <div className="settings-section">
+                  <span className="settings-section-label">ВИДЕО</span>
+                  <div className="settings-row">
+                    {props.availableQualities && props.availableQualities.length > 0 && props.onSetQuality && (
+                      <select
+                        className="video-quality-select"
+                        value={props.quality ?? "auto"}
+                        onChange={(e) => props.onSetQuality!(e.target.value)}
+                      >
+                        {props.availableQualities.map((q) => (
+                          <option key={q} value={q}>{QUALITY_LABELS[q] ?? q}</option>
+                        ))}
+                      </select>
+                    )}
+                    {props.onToggleCC != null && (
+                      <button
+                        onClick={props.onToggleCC}
+                        className={`video-ctrl-btn${props.ccEnabled ? " is-on" : ""}`}
+                        title="Хаалттай тайлбар (CC)"
+                      >
+                        CC
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className="dashboard-dub-status">{dubStatusText}</span>
-              </div>
-            )
-          })()}
+              )}
 
-          {!isLoading && dubStatusText && (
-            <span className="dashboard-dub-status">{dubStatusText}</span>
+              {hasDubSettings && (
+                <>
+                  {props.voices && props.onSelectVoice && (
+                    <div className="settings-section">
+                      <span className="settings-section-label">ХООЛОЙ</span>
+                      <div className="dub-voice-picker" role="group" aria-label="Хоолой сонгох">
+                        {props.voices.map((v) => (
+                          <button
+                            key={v.id}
+                            onClick={props.selectedVoiceId !== v.id ? () => props.onSelectVoice!(v.id) : undefined}
+                            disabled={isLoading}
+                            className={`dub-voice-card${props.selectedVoiceId === v.id ? " is-selected" : ""}`}
+                          >
+                            <span className="dub-voice-name">{v.name}</span>
+                            <span className="dub-voice-gender">{v.gender === "male" ? "♂" : "♀"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {props.onDubVolumeChange && props.onYtVolumeChange && (
+                    <div className="settings-section">
+                      <span className="settings-section-label">ДУУН ХЭМЖЭЭ</span>
+                      <div className="dub-vol-section">
+                        <VolumeRow
+                          label="Монгол дуб"
+                          value={props.dubVolume ?? 100}
+                          onChange={props.onDubVolumeChange}
+                          disabled={isLoading}
+                        />
+                        <VolumeRow
+                          label="Эх бичлэг"
+                          value={props.ytVolume ?? 20}
+                          max={50}
+                          onChange={props.onYtVolumeChange}
+                          disabled={isLoading}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {isLoading && (
+            <div className="dub-progress-row">
+              <div className="dub-progress-track">
+                {props.dubProgress != null && props.dubProgress.total > 0 ? (
+                  <div
+                    className="dub-progress-fill"
+                    style={{ width: `${Math.round((props.dubProgress.done / props.dubProgress.total) * 100)}%` }}
+                  />
+                ) : (
+                  <div className="dub-progress-fill is-indeterminate" />
+                )}
+              </div>
+              {props.dubProgress != null && props.dubProgress.total > 0 && (
+                <span className="dub-count">
+                  {props.dubProgress.done}/{props.dubProgress.total}
+                </span>
+              )}
+            </div>
+          )}
+
+          {props.dubStatus === "ready" && (
+            <p className="dub-ready-text">Дуб бэлэн</p>
           )}
 
           {props.dubError && (
-            <span className="dashboard-dub-error">{props.dubError}</span>
+            <p className="dub-error-text">{props.dubError}</p>
           )}
         </div>
       )}

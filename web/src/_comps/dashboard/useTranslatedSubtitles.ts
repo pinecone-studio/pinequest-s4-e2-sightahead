@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Segment } from "@/lib/backend-api";
 import {
   streamProcess,
@@ -20,6 +20,7 @@ export function useTranslatedSubtitles(
   const [segments, setSegments] = useState<Segment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!videoId || sourceSegments.length === 0) {
@@ -54,8 +55,21 @@ export function useTranslatedSubtitles(
       text: s.text,
     }));
 
+    // Schedule a batched flush — debounced at 80ms so rapid SSE bursts (e.g.
+    // all 40 segments of a batch arriving in <10ms) collapse into 1 re-render.
+    const scheduleFlush = (snapshot: Segment[], immediate: boolean) => {
+      if (flushRef.current) clearTimeout(flushRef.current);
+      if (immediate) {
+        setSegments([...snapshot]);
+      } else {
+        flushRef.current = setTimeout(() => setSegments([...snapshot]), 80);
+      }
+    };
+
+    let received = 0;
+
     void streamProcess(
-      { source_lang: sourceLang, segments: payload, tts: false },
+      { video_id: videoId, source_lang: sourceLang, segments: payload, tts: false },
       {
         onSegment: (seg: StreamedSegment, index: number) => {
           if (!active) return;
@@ -65,10 +79,16 @@ export function useTranslatedSubtitles(
               translated_text: seg.translated_text || null,
             };
           }
-          setSegments([...built]);
+          received++;
+          // Flush immediately for the very first translated segment so the
+          // subtitle pane appears without waiting for the debounce window.
+          scheduleFlush(built, received === 1);
         },
         onDone: () => {
-          if (active) setLoading(false);
+          if (!active) return;
+          if (flushRef.current) clearTimeout(flushRef.current);
+          setSegments([...built]);
+          setLoading(false);
         },
         onError: (msg) => {
           if (!active) return;
@@ -86,6 +106,7 @@ export function useTranslatedSubtitles(
     return () => {
       active = false;
       controller.abort();
+      if (flushRef.current) clearTimeout(flushRef.current);
     };
   }, [videoId, sourceSegments, sourceLang]);
 

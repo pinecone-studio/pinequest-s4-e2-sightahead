@@ -137,6 +137,7 @@ def _local_read_user_data(user_id: str) -> dict[str, Any]:
 
 
 def _local_write_user_data(user_id: str, data: dict[str, Any]) -> None:
+    import time
     with _local_user_lock(user_id):
         path = _local_user_path(user_id)
         directory = os.path.dirname(path)
@@ -144,7 +145,21 @@ def _local_write_user_data(user_id: str, data: dict[str, Any]) -> None:
         tmp_path = os.path.join(directory, f".{_safe_user_id(user_id)}.{uuid4().hex}.tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(_normalize_local_user_data(data), f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, path)
+        # On Windows, os.replace can fail with PermissionError when the target
+        # file is briefly locked by antivirus or the Windows indexer. Retry a
+        # few times before giving up.
+        for attempt in range(4):
+            try:
+                os.replace(tmp_path, path)
+                return
+            except PermissionError:
+                if attempt == 3:
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+                    raise
+                time.sleep(0.05 * (attempt + 1))
 
 
 def _dump_json(model: BaseModel) -> dict[str, Any]:
@@ -409,10 +424,41 @@ def _normalize_transcript_segments(segments: list[Any]) -> list[dict[str, Any]]:
     return normalized
 
 
+def _translation_cache_version() -> str:
+    return os.getenv("TRANSLATION_CACHE_VERSION", "sentence-v2")
+
+
+def _cached_translation_entry(cached: dict[str, Any], mode: str) -> dict[str, Any] | None:
+    translations = cached.get("translations")
+    if not isinstance(translations, dict):
+        return None
+    entry = translations.get(mode)
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("version") != _translation_cache_version():
+        return None
+    return entry
+
+
 def get_video_transcript(video_id: str) -> VideoTranscriptCache | None:
     cached = get_cached_video(video_id)
     if not cached:
         return None
+
+    subtitle_entry = _cached_translation_entry(cached, "subtitle")
+    if subtitle_entry:
+        translated_segments = _normalize_transcript_segments(subtitle_entry.get("segments") or [])
+        if translated_segments:
+            return VideoTranscriptCache(
+                video_id=video_id,
+                source_lang=cached.get("source_lang") or cached.get("language_code") or "en",
+                translation_version=subtitle_entry.get("version"),
+                translation_mode="subtitle",
+                segments=[
+                    TranscriptSegmentRecord(**segment)
+                    for segment in translated_segments
+                ],
+            )
 
     segments = _normalize_transcript_segments(cached.get("segments") or [])
     if not segments:
@@ -421,6 +467,8 @@ def get_video_transcript(video_id: str) -> VideoTranscriptCache | None:
     return VideoTranscriptCache(
         video_id=video_id,
         source_lang=cached.get("source_lang") or cached.get("language_code") or "en",
+        translation_version=cached.get("translation_version"),
+        translation_mode=cached.get("translation_mode"),
         segments=[TranscriptSegmentRecord(**segment) for segment in segments],
     )
 
@@ -430,10 +478,42 @@ def save_video_transcript(payload: VideoTranscriptCache) -> VideoTranscriptCache
     incoming = _normalize_transcript_segments([_dump(segment) for segment in payload.segments])
     existing = _normalize_transcript_segments(current.get("segments") or [])
 
+    if payload.translation_version and any(segment.get("translated_text") for segment in incoming):
+        mode = payload.translation_mode or "subtitle"
+        translations = current.get("translations") if isinstance(current.get("translations"), dict) else {}
+        translations = dict(translations)
+        existing_entry = translations.get(mode) if isinstance(translations.get(mode), dict) else {}
+        translations[mode] = {
+            **existing_entry,
+            "version": payload.translation_version,
+            "segments": incoming,
+        }
+        cache_video(
+            payload.video_id,
+            {
+                **current,
+                "video_id": payload.video_id,
+                "source_lang": payload.source_lang,
+                "segments": existing or incoming,
+                "translations": translations,
+            },
+        )
+        return VideoTranscriptCache(
+            video_id=payload.video_id,
+            source_lang=payload.source_lang,
+            translation_version=payload.translation_version,
+            translation_mode=mode,
+            segments=[TranscriptSegmentRecord(**segment) for segment in incoming],
+        )
+
     merged: list[dict[str, Any]] = []
     for index, segment in enumerate(incoming):
         existing_segment = existing[index] if index < len(existing) else None
-        if existing_segment and not segment.get("translated_text"):
+        if (
+            existing_segment
+            and not segment.get("translated_text")
+            and existing_segment.get("text") == segment.get("text")
+        ):
             segment["translated_text"] = existing_segment.get("translated_text")
         merged.append(segment)
 
@@ -443,6 +523,8 @@ def save_video_transcript(payload: VideoTranscriptCache) -> VideoTranscriptCache
             **current,
             "video_id": payload.video_id,
             "source_lang": payload.source_lang,
+            "translation_version": payload.translation_version
+            or current.get("translation_version"),
             "segments": merged,
         },
     )
@@ -450,6 +532,8 @@ def save_video_transcript(payload: VideoTranscriptCache) -> VideoTranscriptCache
     return VideoTranscriptCache(
         video_id=payload.video_id,
         source_lang=payload.source_lang,
+        translation_version=payload.translation_version or current.get("translation_version"),
+        translation_mode=payload.translation_mode or current.get("translation_mode"),
         segments=[TranscriptSegmentRecord(**segment) for segment in merged],
     )
 

@@ -26,8 +26,7 @@ def synthesize(text: str, options: dict = None) -> bytes:
 
 
 def _azure_synthesize(text: str, options: dict) -> bytes:
-    gender = options.get("gender", "male")
-    voice = _AZURE_VOICES.get(gender, _AZURE_VOICES["male"])
+    voice = options.get("voice") or _AZURE_VOICES.get(options.get("gender", "male"), _AZURE_VOICES["male"])
     rate = os.getenv("AZURE_TTS_RATE", "+30%")
 
     safe_text = saxutils.escape(text)
