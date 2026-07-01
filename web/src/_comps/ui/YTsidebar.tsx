@@ -14,6 +14,7 @@ import {
   Bot,
   History,
   Lightbulb,
+  Lock,
   Notebook,
   PanelRightClose,
   PanelRightOpen,
@@ -77,16 +78,19 @@ const PAID_TABS: { id: YTsidebarTab; label: string; icon: LucideIcon }[] = [
 ];
 
 export function YTsidebar() {
-  const { isSubscribed } = useUI();
+  // isSubscribed = real paid user. allowAccess = demo unlock via "Туршилтаар
+  // нэвтрэх" (see UIProvider). Either one unlocks the paid tabs.
+  const { isSubscribed, allowAccess } = useUI();
   const { videoId } = useVideoProcess();
   const [open, setOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<YTsidebarTab>("history");
 
-  const tabs = isSubscribed ? [...FREE_TABS, ...PAID_TABS] : FREE_TABS;
-  // A signed-out user can never land on a paid tab.
-  const effectiveTab = tabs.some((t) => t.id === activeTab)
-    ? activeTab
-    : "history";
+  const paidUnlocked = isSubscribed || allowAccess;
+  const isPaidTab = (id: YTsidebarTab) => PAID_TABS.some((t) => t.id === id);
+  // Paid tabs are always visible but LOCKED until unlocked — so a locked tab
+  // can never be the active one.
+  const effectiveTab =
+    isPaidTab(activeTab) && !paidUnlocked ? "history" : activeTab;
 
   if (!open) {
     return (
@@ -107,22 +111,27 @@ export function YTsidebar() {
   return (
     <aside className="flex w-full flex-col gap-4 overflow-y-auto lg:w-80 lg:shrink-0">
       <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
-              effectiveTab === tab.id
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent"
-            }`}
-            title={tab.label}
-          >
-            <tab.icon className="h-4 w-4" />
-            <span className="hidden xl:inline">{tab.label}</span>
-          </button>
-        ))}
+        {[...FREE_TABS, ...PAID_TABS].map((tab) => {
+          const locked = isPaidTab(tab.id) && !paidUnlocked;
+          const Icon = locked ? Lock : tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              disabled={locked}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
+                effectiveTab === tab.id
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent"
+              } ${locked ? "cursor-not-allowed opacity-50" : ""}`}
+              title={locked ? `${tab.label} — Про хэрэглэгчид` : tab.label}
+            >
+              <Icon className="h-4 w-4" />
+              <span className="hidden xl:inline">{tab.label}</span>
+            </button>
+          );
+        })}
         <button
           type="button"
           onClick={() => setOpen(false)}

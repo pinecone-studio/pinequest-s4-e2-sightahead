@@ -28,12 +28,14 @@ import {
 import { useVideoProcess } from "./providers/VideoProcessProvider";
 import { useAuth } from "./providers/AuthProvider";
 
-type SearchBoxUI = "middle" | "top";
+type SearchBoxUI = "middle" | "top" | "header";
 interface SearchBoxProps {
   onSubmit: (url: string) => void;
   // Controlled layout: when provided, pins the box to this position and DISABLES
   // the middle↔top slide animation. When omitted, the box animates itself based
   // on whether it's in use (uncontrolled).
+  //   "middle"/"top" → fixed, full-width overlay box
+  //   "header"       → compact, inline box that lives inside the Header bar
   UI?: SearchBoxUI;
 }
 export default function SearchBox({ onSubmit, UI }: SearchBoxProps) {
@@ -68,7 +70,8 @@ export default function SearchBox({ onSubmit, UI }: SearchBoxProps) {
   // Controlled (UI prop set) → pinned position, animation OFF. Uncontrolled →
   // follow `active` and animate the middle↔top slide.
   const controlled = UI !== undefined;
-  const atTop = controlled ? UI === "top" : active;
+  const isHeader = UI === "header";
+  const atTop = controlled ? UI !== "middle" : active;
   const animate = !controlled;
   const searchSurfaceOpen =
     isSearching ||
@@ -208,20 +211,26 @@ export default function SearchBox({ onSubmit, UI }: SearchBoxProps) {
   return (
     <div
       ref={searchBoxRef}
-      className={`fixed left-1/2 -translate-x-1/2 z-40 w-full max-w-4xl px-4 ${
-        animate ? "transition-all duration-500 ease-out" : ""
-      } ${atTop ? "top-20 translate-y-0" : "top-1/2 -translate-y-1/2"}`}
+      className={
+        isHeader
+          ? "relative w-full max-w-md"
+          : `fixed left-1/2 -translate-x-1/2 z-40 w-full max-w-4xl px-4 ${
+              animate ? "transition-all duration-500 ease-out" : ""
+            } ${atTop ? "top-20 translate-y-0" : "top-1/2 -translate-y-1/2"}`
+      }
     >
-      <div
-        className={`text-center space-y-3 overflow-hidden ${
-          animate ? "transition-all duration-300" : ""
-        } ${atTop ? "max-h-0 opacity-0 mb-0" : "max-h-40 opacity-100 mb-6"}`}
-      >
-        <p className="text-muted-foreground text-sm sm:text-base max-w-lg mx-auto">
-          YouTube-ээс видео, channel, playlist хайж, монгол хувилбарт бэлтгэх
-          бичлэгээ сонго.
-        </p>
-      </div>
+      {!isHeader && (
+        <div
+          className={`text-center space-y-3 overflow-hidden ${
+            animate ? "transition-all duration-300" : ""
+          } ${atTop ? "max-h-0 opacity-0 mb-0" : "max-h-40 opacity-100 mb-6"}`}
+        >
+          <p className="text-muted-foreground text-sm sm:text-base max-w-lg mx-auto">
+            YouTube-ээс видео, channel, playlist хайж, монгол хувилбарт бэлтгэх
+            бичлэгээ сонго.
+          </p>
+        </div>
+      )}
 
       <SearchForm
         query={query}
@@ -235,7 +244,13 @@ export default function SearchBox({ onSubmit, UI }: SearchBoxProps) {
       />
 
       {searchSurfaceOpen && (
-        <div className="mt-3 max-h-[70vh] overflow-y-auto rounded-xl border border-border bg-background/95 backdrop-blur-md shadow-lg">
+        <div
+          className={`overflow-y-auto rounded-xl border border-border bg-background/95 backdrop-blur-md shadow-lg ${
+            isHeader
+              ? "absolute left-0 right-0 top-full z-50 mt-2 max-h-[70vh]"
+              : "mt-3 max-h-[70vh]"
+          }`}
+        >
           {selectedChannel ? (
             <ChannelView
               channel={selectedChannel}

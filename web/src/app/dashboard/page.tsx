@@ -6,14 +6,13 @@
 // mounted in the root layout, so this page stays thin.
 
 import Header from "@/_comps/Header";
-import SearchBox from "@/_comps/SearchBox";
 import UserDashboard from "@/_comps/dashboard/UserDashboard";
 
 export default function Page() {
   return (
     <>
-      <Header onSignIn={() => {}} />
-      <SearchBox onSubmit={() => {}} UI="top" />
+      {/* Search lives in the header here (searchbar) — not on the dashboard body. */}
+      <Header onSignIn={() => {}} searchbar />
       <UserDashboard />
     </>
   );
