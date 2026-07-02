@@ -79,6 +79,10 @@ export default function UserDashboard() {
                   loading={subLoading}
                   error={subError}
                   dubSpeed={dubMode === "mongolian" ? dubSpeed : 1}
+                  audioProgress={
+                    dubMode === "mongolian" ? dub.audioProgress : null
+                  }
+                  dubActive={dubMode === "mongolian"}
                 />
               ) : null
             }

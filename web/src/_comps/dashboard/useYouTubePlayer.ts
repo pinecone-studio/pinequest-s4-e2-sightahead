@@ -3,6 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { loadYouTubeApi, type YouTubeEvent, type YouTubePlayer } from "./youtubeApi"
 
+// Aggressively strip YouTube's built-in captions. `unloadModule` handles the
+// common case, but a quality switch or ad boundary can re-inject the module,
+// and setting the caption `track` to an empty object also un-picks whatever
+// language the user's account had defaulted to. All calls are wrapped in
+// try/catch because the API silently throws when the module isn't loaded yet.
+function killCaptions(player: YouTubePlayer | null): void {
+  if (!player) return
+  const modules = ["captions", "cc"]
+  for (const mod of modules) {
+    try { player.unloadModule?.(mod) } catch { /* module not loaded */ }
+    try { player.setOption?.(mod, "track", {}) } catch { /* not supported */ }
+    try { player.setOption?.(mod, "reload", false) } catch { /* not supported */ }
+    try { player.setOption?.(mod, "fontSize", -1) } catch { /* not supported */ }
+  }
+}
+
 const QUALITY_LABELS: Record<string, string> = {
   auto:     "Авто",
   hd2160:   "4K",
@@ -50,6 +66,10 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
       if (player?.getCurrentTime) setTime(player.getCurrentTime() || 0)
       if (player?.getPlaybackRate) setPlaybackRate(player.getPlaybackRate() || 1)
       if (player?.getPlaybackQuality) setQualityState(player.getPlaybackQuality() || "auto")
+      // Safety net: YouTube can silently re-load its caption module (quality
+      // switch, ad boundary, buffered chunk). Nuke it every tick so our own
+      // karaoke overlay is the only text on screen.
+      killCaptions(player)
     }, 250)
 
     loadYouTubeApi().then((YT) => {
@@ -69,7 +89,9 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
           hl: "en",
           cc_load_policy: 0,
           iv_load_policy: 3,
-          fs: 1,
+          // Disable YouTube's own fullscreen button — we render a custom one on
+          // the wrapper so the subtitle overlay is included in fullscreen.
+          fs: 0,
         },
         events: {
           onReady: (event: YouTubeEvent) => {
@@ -77,6 +99,7 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
             setReady(true)
             setDuration(event.target.getDuration?.() || fallbackDuration)
             styleIframe(event.target.getIframe?.())
+            killCaptions(event.target)
           },
           onStateChange: (event: YouTubeEvent) => {
             if (!mounted) return
@@ -84,6 +107,11 @@ export function useYouTubePlayer(videoId: string, fallbackDuration = 0) {
             setDuration(event.target.getDuration?.() || fallbackDuration)
             const avail = event.target.getAvailableQualityLevels?.() ?? []
             if (avail.length) setAvailableQualities(avail)
+            killCaptions(event.target)
+          },
+          onApiChange: (event: YouTubeEvent) => {
+            if (!mounted) return
+            killCaptions(event.target)
           },
         },
       })

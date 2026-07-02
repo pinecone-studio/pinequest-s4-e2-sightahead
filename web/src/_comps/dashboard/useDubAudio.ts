@@ -48,6 +48,13 @@ export function useDubAudio(
     done: number;
     total: number;
   } | null>(null);
+  // Live audio playback position — SubtitlePane uses this so the karaoke
+  // highlight follows the actual TTS clock, not just a video-time estimate.
+  const [audioProgress, setAudioProgress] = useState<{
+    segmentStart: number;
+    audioTime: number;
+    audioSeconds: number;
+  } | null>(null);
 
   // Keyed by segment `start` (stable across renders) — array indices shift as
   // streamed segments get sorted in, which previously restarted playing audio.
@@ -61,6 +68,16 @@ export function useDubAudio(
   const abortRef = useRef<AbortController | null>(null);
   const blobUrlsRef = useRef<string[]>([]);
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // rAF poller for the currently-playing audio's clock. `timeupdate` fires only
+  // ~4Hz on Chrome so the karaoke lags behind the voice — rAF lets us push a
+  // fresh audioProgress at up to display refresh rate (~60Hz).
+  const rafIdRef = useRef<number | null>(null);
+  const lastPublishedTimeRef = useRef<number>(-1);
+  const currentActiveAudioRef = useRef<{
+    audio: HTMLAudioElement;
+    key: number;
+    audioSeconds: number;
+  } | null>(null);
   // Key (`videoId::voiceId`) of the dub already built. Toggling the dub off/on
   // must NOT re-run the /process translate+TTS pipeline — only a new video or
   // voice should rebuild. Set once a build COMPLETES; cleared on failure so a
@@ -73,6 +90,11 @@ export function useDubAudio(
       audio.src = "";
     });
     activeAudiosRef.current.clear();
+    currentActiveAudioRef.current = null;
+    if (rafIdRef.current != null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
   }, []);
 
   const revokeBlobUrls = useCallback(() => {
@@ -102,14 +124,52 @@ export function useDubAudio(
     }
   }, []);
 
+  // rAF loop: publishes the active audio's live time so SubtitlePane's karaoke
+  // stays glued to the voice. Only runs while an audio is playing; auto-stops
+  // when the audio pauses, ends, or gets swapped for a different segment.
+  const stopRafPoll = useCallback(() => {
+    if (rafIdRef.current != null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+  }, []);
+
+  const startRafPoll = useCallback(() => {
+    stopRafPoll();
+    const tick = () => {
+      const info = currentActiveAudioRef.current;
+      if (!info) {
+        rafIdRef.current = null;
+        return;
+      }
+      const { audio, key, audioSeconds } = info;
+      // Bail out if this audio is no longer the active one for its segment
+      // (swapped out, pruned, or user disabled dub).
+      if (activeAudiosRef.current.get(key) !== audio || audio.paused) {
+        rafIdRef.current = null;
+        return;
+      }
+      const t = audio.currentTime;
+      // Only push a new state if the audio clock advanced meaningfully (>10ms)
+      // — avoids piling up identical renders when the tab is idle.
+      if (Math.abs(t - lastPublishedTimeRef.current) > 0.01) {
+        lastPublishedTimeRef.current = t;
+        setAudioProgress({ segmentStart: key, audioTime: t, audioSeconds });
+      }
+      rafIdRef.current = requestAnimationFrame(tick);
+    };
+    rafIdRef.current = requestAnimationFrame(tick);
+  }, [stopRafPoll]);
+
   useEffect(() => {
     return () => {
       if (flushRef.current) clearTimeout(flushRef.current);
+      stopRafPoll();
       stopAllAudio();
       abortRef.current?.abort();
       revokeBlobUrls();
     };
-  }, []);
+  }, [stopRafPoll]);
 
   // Build translate/TTS pipeline when video or voice changes. Toggling `enabled`
   // does NOT rebuild — `builtKeyRef` makes it a pure on/off switch.
@@ -263,6 +323,7 @@ export function useDubAudio(
     stopAllAudio();
     lastStartedKeyRef.current = -1;
     prevTimeRef.current = -1;
+    setAudioProgress(null);
   }, [enabled, stopAllAudio]);
 
   // Apply playback rate changes to currently playing audio. Multiply by each
@@ -281,15 +342,18 @@ export function useDubAudio(
     });
   }, [volume]);
 
-  // Pause/resume dub audio in sync with the video
+  // Pause/resume dub audio in sync with the video. Also toggle the karaoke
+  // poller so we don't burn frames while the audio is silent.
   useEffect(() => {
     if (!enabled) return;
     if (!playing) {
       pauseAllAudio();
+      stopRafPoll();
     } else {
       resumeAllAudio();
+      if (currentActiveAudioRef.current) startRafPoll();
     }
-  }, [playing, enabled, pauseAllAudio, resumeAllAudio]);
+  }, [playing, enabled, pauseAllAudio, resumeAllAudio, startRafPoll, stopRafPoll]);
 
   // Sync audio to video playback time. Keys audio by segment `start` (stable
   // across renders) so re-sorting the array as new segments stream in never
@@ -315,23 +379,40 @@ export function useDubAudio(
     );
     if (!seg || !seg.blobUrl) return;
 
-    // Same segment already started for this playback pass; do not restart it.
-    if (seg.start === lastStartedKeyRef.current) return;
-
-    const audio = new Audio(seg.blobUrl);
+    const key = seg.start;
     const audioSeconds = seg.audioMs > 0 ? seg.audioMs / 1000 : 0;
     const targetSeconds = Math.max(0.1, seg.duration);
     const fitRate =
       audioSeconds > targetSeconds
         ? Math.min(1.35, Math.max(1, audioSeconds / targetSeconds))
         : 1;
+    const offset = Math.max(0, currentTime - seg.start);
 
-    // Landing mid-segment (seek or late-arriving audio): start the audio at the
-    // matching position instead of the segment's beginning. Audio media time
-    // advances fitRate× faster than video time, hence the scaling. Clamp to the
-    // audio's actual length so we never seek past the end (which throws).
-    const offset = currentTime - seg.start;
-    if (offset > 0.3 && audioSeconds > 0) {
+    // Same segment already playing — don't restart it. But DO check drift: if
+    // the audio clock has slipped from the expected position (>0.35s) — usually
+    // from browser scheduling, decode delays, or the video hitting a stall —
+    // snap it back so the Mongolian voice stays lined up with the subtitle.
+    if (key === lastStartedKeyRef.current) {
+      const existing = activeAudiosRef.current.get(key);
+      if (existing && !existing.paused && audioSeconds > 0) {
+        const expected = offset * fitRate;
+        if (Math.abs(existing.currentTime - expected) > 0.35) {
+          existing.currentTime = Math.min(
+            expected,
+            Math.max(0, audioSeconds - 0.05),
+          );
+        }
+      }
+      return;
+    }
+
+    const audio = new Audio(seg.blobUrl);
+
+    // Precisely position the audio to match the video's current spot in the
+    // segment — even for small offsets, so the TTS voice starts speaking at
+    // exactly the right word. Audio media time runs fitRate× faster than video
+    // time. Clamp to the audio's actual length so we never seek past the end.
+    if (audioSeconds > 0) {
       audio.currentTime = Math.min(
         offset * fitRate,
         Math.max(0, audioSeconds - 0.05),
@@ -341,16 +422,91 @@ export function useDubAudio(
     audio.volume = Math.max(0, Math.min(1, volume / 100));
     audio.playbackRate = playbackRate * fitRate;
     fitRatesRef.current.set(audio, fitRate);
-    const key = seg.start;
+
     audio.onended = () => {
-      if (activeAudiosRef.current.get(key) === audio)
+      if (activeAudiosRef.current.get(key) === audio) {
         activeAudiosRef.current.delete(key);
+        if (currentActiveAudioRef.current?.audio === audio) {
+          currentActiveAudioRef.current = null;
+          stopRafPoll();
+        }
+        setAudioProgress((p) => (p && p.segmentStart === key ? null : p));
+      }
     };
 
     activeAudiosRef.current.set(key, audio);
     lastStartedKeyRef.current = key;
+    // Track this as the currently-active audio so the rAF poller reads its
+    // clock every frame (~60Hz) instead of relying on Chrome's ~4Hz
+    // `timeupdate` — that's why the highlight lagged the voice before.
+    currentActiveAudioRef.current = { audio, key, audioSeconds };
+    lastPublishedTimeRef.current = -1;
+    // Push an immediate snapshot so the highlight isn't stuck at the previous
+    // segment for the first frame.
+    setAudioProgress({ segmentStart: key, audioTime: audio.currentTime, audioSeconds });
+
+    // Backend-reported `audio_ms` comes from mutagen and is 0 if the MP3
+    // parse fails — that would leave audioSeconds=0 and force the karaoke
+    // onto the slow video-time fallback (and skip the fitRate stretch, so
+    // the voice would run over long segments). Once the browser has decoded
+    // the MP3 header we know the real duration; patch the ref + published
+    // audioProgress + playbackRate so both voice and karaoke snap to the
+    // correct pace.
+    const onMetadata = () => {
+      const dur = audio.duration;
+      if (!Number.isFinite(dur) || dur <= 0) return;
+
+      const realFitRate =
+        dur > targetSeconds
+          ? Math.min(1.35, Math.max(1, dur / targetSeconds))
+          : 1;
+      audio.playbackRate = playbackRate * realFitRate;
+      fitRatesRef.current.set(audio, realFitRate);
+
+      if (currentActiveAudioRef.current?.audio === audio) {
+        currentActiveAudioRef.current = {
+          audio,
+          key,
+          audioSeconds: dur,
+        };
+      }
+      setAudioProgress((prev) =>
+        prev && prev.segmentStart === key
+          ? { ...prev, audioSeconds: dur, audioTime: audio.currentTime }
+          : prev,
+      );
+    };
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      onMetadata();
+    } else {
+      audio.addEventListener("loadedmetadata", onMetadata, { once: true });
+    }
+
+    // Re-arm the rAF poller whenever THIS audio actually starts playing — the
+    // `.then()` on play() only fires on success, so autoplay blocks would
+    // silently leave the karaoke frozen. The ownership check keeps old,
+    // now-secondary audios (still playing while a newer segment is active)
+    // from stealing / stopping the newer audio's poll.
+    const onPlaying = () => {
+      if (currentActiveAudioRef.current?.audio === audio) startRafPoll();
+    };
+    const onPauseEvt = () => {
+      if (currentActiveAudioRef.current?.audio === audio) stopRafPoll();
+    };
+    audio.addEventListener("playing", onPlaying);
+    audio.addEventListener("pause", onPauseEvt);
+    const priorOnEnded = audio.onended;
+    audio.onended = (ev) => {
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("pause", onPauseEvt);
+      priorOnEnded?.call(audio, ev);
+    };
+
     pruneOverlappingAudio();
     audio.play().catch((e) => console.warn("[DubAudio] play() blocked:", e));
+    // Kick off the poller now too — the tick self-bails if audio.paused is
+    // still true, and the `playing` event will re-start it when audio unlocks.
+    startRafPoll();
   }, [
     currentTime,
     segments,
@@ -388,5 +544,6 @@ export function useDubAudio(
     segmentCount: segments.length,
     translatedSegments,
     audioSegments,
+    audioProgress,
   };
 }

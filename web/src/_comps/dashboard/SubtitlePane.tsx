@@ -11,6 +11,20 @@ type SubtitlePaneProps = {
   // User's dub-speed pref (1 = default, 2 = 2× faster, 0.5 = half). Only
   // affects the karaoke-style highlight so it stays in sync with the audio.
   dubSpeed?: number;
+  // Live position of the currently-playing TTS audio. When provided AND the
+  // active segment matches, the karaoke highlight follows the audio clock
+  // exactly (word progress = audioTime / audioSeconds) instead of a
+  // video-time-based estimate.
+  audioProgress?: {
+    segmentStart: number;
+    audioTime: number;
+    audioSeconds: number;
+  } | null;
+  // True when Mongolian dub is on. In dub mode the subtitle appears only while
+  // the TTS voice is actively speaking a segment (audioProgress matches) —
+  // silence between segments hides the line. In non-dub mode we fall back to
+  // showing the line for its entire video-time window.
+  dubActive?: boolean;
 };
 
 // Shows the single subtitle line whose [start, start + duration) window contains
@@ -25,26 +39,51 @@ export function SubtitlePane({
   loading,
   error,
   dubSpeed = 1,
+  audioProgress,
+  dubActive = false,
 }: SubtitlePaneProps) {
   const active = useMemo(() => {
+    // Dub mode: the voice is the source of truth. Show the segment currently
+    // being spoken (by audioProgress), NOT whatever the video time is inside.
+    // Silence between voice segments → no subtitle.
+    if (dubActive) {
+      if (!audioProgress || audioProgress.audioSeconds <= 0) return null;
+      const seg = segments.find(
+        (s) => Math.abs(s.start - audioProgress.segmentStart) < 0.01,
+      );
+      if (!seg) return null;
+      const text = seg.translated_text?.trim() || seg.text;
+      if (!text) return null;
+      const progress = Math.max(
+        0,
+        Math.min(1, audioProgress.audioTime / audioProgress.audioSeconds),
+      );
+      return { text, progress };
+    }
+
+    // Non-dub mode: subtitle tracks video time (original behaviour). Karaoke
+    // highlight can still use audio-time when a TTS audio happens to line up
+    // with this segment (fallback for the translate-only pipeline).
     const seg = segments.find(
       (s) => currentTime >= s.start && currentTime < s.start + s.duration,
     );
     if (!seg) return null;
-    // Prefer the Mongolian translation; fall back to the original caption.
     const text = seg.translated_text?.trim() || seg.text;
     if (!text) return null;
 
     const videoElapsed = currentTime - seg.start;
     const dur = Math.max(0.1, seg.duration);
-
-    // If we know the TTS audio's real length, base progress on the dub's audio
-    // media clock (video time × dubSpeed × fitRate). This makes the highlight
-    // race ahead when the user picks a faster dub, and lag when slower.
-    // Fall back to raw video progress for translate-only subtitles that never
-    // ran through TTS (audio_ms == null).
     let progress: number;
-    if (seg.audio_ms && seg.audio_ms > 0) {
+    if (
+      audioProgress &&
+      audioProgress.audioSeconds > 0 &&
+      Math.abs(audioProgress.segmentStart - seg.start) < 0.01
+    ) {
+      progress = Math.max(
+        0,
+        Math.min(1, audioProgress.audioTime / audioProgress.audioSeconds),
+      );
+    } else if (seg.audio_ms && seg.audio_ms > 0) {
       const audioSeconds = seg.audio_ms / 1000;
       const fitRate =
         audioSeconds > dur
@@ -56,9 +95,15 @@ export function SubtitlePane({
       progress = Math.max(0, Math.min(1, videoElapsed / dur));
     }
     return { text, progress };
-  }, [segments, currentTime, dubSpeed]);
+  }, [segments, currentTime, dubSpeed, audioProgress, dubActive]);
 
   if (active) {
+    // Once the karaoke has swept through every word (voice finished reading
+    // this line), hide the subtitle so the video breathes for a moment before
+    // the next segment appears — otherwise a fully-lit line lingers on screen
+    // even though nothing is being spoken.
+    if (active.progress >= 0.999) return null;
+
     // Split on whitespace while keeping the spaces so the rendered layout is
     // unchanged. Only word tokens are counted / highlighted.
     const tokens = active.text.split(/(\s+)/);
