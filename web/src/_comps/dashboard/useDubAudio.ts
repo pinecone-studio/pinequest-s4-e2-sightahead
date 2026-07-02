@@ -51,11 +51,13 @@ export function useDubAudio(
     audioRef.current = null
     activeIdxRef.current = -1
     abortRef.current?.abort()
-    setSegments([])
-    setError(null)
     const total = sourceSegments.length
-    setProgress({ done: 0, total })
-    setStep("translating")
+    const stateTimer = setTimeout(() => {
+      setSegments([])
+      setError(null)
+      setProgress({ done: 0, total })
+      setStep("translating")
+    }, 0)
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -119,6 +121,7 @@ export function useDubAudio(
     })()
 
     return () => {
+      clearTimeout(stateTimer)
       controller.abort()
       if (abortRef.current === controller) abortRef.current = null
     }
@@ -132,10 +135,13 @@ export function useDubAudio(
     audioRef.current?.pause()
     audioRef.current = null
     activeIdxRef.current = -1
-    setSegments([])
-    setError(null)
-    setProgress(null)
-    setStep("idle")
+    const stateTimer = setTimeout(() => {
+      setSegments([])
+      setError(null)
+      setProgress(null)
+      setStep("idle")
+    }, 0)
+    return () => clearTimeout(stateTimer)
   }, [enabled])
 
   useEffect(() => {

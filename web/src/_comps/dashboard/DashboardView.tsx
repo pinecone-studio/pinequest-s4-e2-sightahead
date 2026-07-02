@@ -450,10 +450,13 @@ export default function DashboardView({
   // Unlock browser autoplay gate on first user interaction, then toggle dub.
   const handleToggleDub = useCallback(() => {
     try {
-      const ctx: AudioContext = new (
-        (window as any).AudioContext ?? (window as any).webkitAudioContext
-      )();
-      void ctx.resume().then(() => ctx.close());
+      const AudioContextConstructor =
+        window.AudioContext ??
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioContextConstructor) {
+        const ctx = new AudioContextConstructor();
+        void ctx.resume().then(() => ctx.close());
+      }
     } catch {}
     setDubMode((m) => (m === "mongolian" ? "original" : "mongolian"));
   }, []);

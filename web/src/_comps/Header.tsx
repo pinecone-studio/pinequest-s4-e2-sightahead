@@ -80,9 +80,15 @@ export default function Header({
         ) : (
           <Link
             className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
-            href={`/${user?.uid}/note`}
+            href={user ? "/checkout" : "/"}
+            onClick={(event) => {
+              if (!user) {
+                event.preventDefault();
+                onSignIn();
+              }
+            }}
           >
-            Про авах
+            Про эрх авах
           </Link>
         )}
         <Button

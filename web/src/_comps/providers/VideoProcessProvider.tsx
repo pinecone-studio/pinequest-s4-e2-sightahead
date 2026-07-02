@@ -295,15 +295,18 @@ export const VideoProcessProvider = ({ children }: { children: ReactNode }) => {
   // (ready or idle) and we weren't mid-search, clear the action.
   useEffect(() => {
     if (!videoId) return;
-    if (
-      processStage === "fetching" ||
-      processStage === "translating" ||
-      processStage === "dubbing"
-    ) {
-      setVideoAction("processing");
-    } else if (processStage === "ready" || processStage === "idle") {
-      setVideoAction((a) => (a === "processing" || a === "selecting" ? null : a));
-    }
+    const stateTimer = setTimeout(() => {
+      if (
+        processStage === "fetching" ||
+        processStage === "translating" ||
+        processStage === "dubbing"
+      ) {
+        setVideoAction("processing");
+      } else if (processStage === "ready" || processStage === "idle") {
+        setVideoAction((a) => (a === "processing" || a === "selecting" ? null : a));
+      }
+    }, 0);
+    return () => clearTimeout(stateTimer);
   }, [processStage, videoId]);
 
   const value: VideoProcessContextType = {
