@@ -265,7 +265,7 @@ export function VideoPane(props: VideoPaneProps) {
                       <span className="settings-section-label">ХУРД</span>
                       <div className="dub-vol-section">
                         <SpeedRow
-                          label="Дубын хурд"
+                          label="Хоолойны хурд"
                           value={props.dubSpeed ?? 1}
                           onChange={props.onDubSpeedChange}
                           disabled={isLoading}

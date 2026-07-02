@@ -585,6 +585,18 @@
     sans-serif;
 }
 
+/* Karaoke-style progressive highlight — .is-read is the "already read" tail
+   of the current subtitle line, driven by the segment's video-time progress. */
+.dashboard-subtitle-word {
+  color: rgba(244, 238, 214, 0.55);
+  transition: color 0.18s ease, text-shadow 0.18s ease;
+}
+
+.dashboard-subtitle-word.is-read {
+  color: #d4f0c8;
+  text-shadow: 0 0 8px rgba(126, 200, 126, 0.35);
+}
+
 .dashboard-subtitle-status {
   margin: 0;
   color: #9dae92;

@@ -78,6 +78,7 @@ export default function UserDashboard() {
                   currentTime={player.time}
                   loading={subLoading}
                   error={subError}
+                  dubSpeed={dubMode === "mongolian" ? dubSpeed : 1}
                 />
               ) : null
             }

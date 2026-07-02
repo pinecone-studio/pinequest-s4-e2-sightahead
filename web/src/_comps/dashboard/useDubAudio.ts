@@ -363,6 +363,9 @@ export function useDubAudio(
   ]);
 
   // Translated lines for SubtitlePane (available as soon as translation lands).
+  // audio_ms is passed through so the pane can compute karaoke-style progress
+  // based on the actual TTS audio length (which the dub-speed slider affects),
+  // not just the segment's video-time duration.
   const translatedSegments: Segment[] = segments
     .filter((s) => s.translatedText !== null)
     .map((s) => ({
@@ -372,7 +375,7 @@ export function useDubAudio(
       source: "youtube_captions" as const,
       translated_text: s.translatedText,
       audio_path: null,
-      audio_ms: null,
+      audio_ms: s.audioMs > 0 ? s.audioMs : null,
       audio_b64: null,
     }));
 
