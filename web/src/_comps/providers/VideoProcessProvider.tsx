@@ -34,7 +34,7 @@ import { useDubAudio } from "@/_comps/dashboard/useDubAudio";
 import { DEFAULT_VOICE_ID, VOICES, type Voice } from "@/_comps/dashboard/voices";
 import type { ProcessStage } from "@/_comps/dashboard/VideoPane";
 import type { YouTubeSearchResult } from "@/lib/youtube-search";
-import type { Segment } from "@/lib/backend-api";
+import { recordWatchHistory, type Segment } from "@/lib/backend-api";
 
 export type VideoActionType =
   | "searching"
@@ -165,6 +165,53 @@ export const VideoProcessProvider = ({ children }: { children: ReactNode }) => {
     sourceLang,
     dubMode !== "mongolian",
   );
+
+  // ── Watch history ────────────────────────────────────────────────
+  // Persist the playback position every 15s while a video is open, plus once
+  // on close. This lived in the old DashboardView; the new dashboard
+  // (UserDashboard) composes providers, so the saver moved here — without it
+  // the history rail silently stopped recording after the UI overhaul.
+  // The ref keeps the interval callback reading fresh time without
+  // re-arming the timer on every ~250ms player tick.
+  const playbackRef = useRef({ time: 0, duration: 0 });
+  useEffect(() => {
+    playbackRef.current = { time: player.time, duration: segmentDuration };
+  }, [player.time, segmentDuration]);
+
+  const saveWatchHistory = useCallback(async () => {
+    if (!videoId || !selectedVideo) return;
+    const { time, duration } = playbackRef.current;
+    try {
+      await recordWatchHistory({
+        video_id: videoId,
+        last_position_ms: Math.floor(time * 1000),
+        watched_seconds: Math.floor(time),
+        completed: duration > 0 ? time / duration >= 0.95 : false,
+        youtube_url:
+          selectedVideo.url || `https://www.youtube.com/watch?v=${videoId}`,
+        title: selectedVideo.title,
+        channel_name: selectedVideo.channelTitle,
+        thumbnail_url: selectedVideo.thumbnailUrl,
+        duration_seconds:
+          selectedVideo.durationSeconds ??
+          (duration > 0 ? Math.floor(duration) : undefined),
+      });
+    } catch (error) {
+      console.warn("Watch history failed to save:", error);
+    }
+  }, [videoId, selectedVideo]);
+
+  useEffect(() => {
+    if (!videoId) return;
+    void saveWatchHistory();
+    const intervalId = window.setInterval(() => {
+      void saveWatchHistory();
+    }, 15000);
+    return () => {
+      window.clearInterval(intervalId);
+      void saveWatchHistory();
+    };
+  }, [saveWatchHistory, videoId]);
 
   // Dub audio: reuses captions from useProcessedVideo so we don't fetch the
   // transcript twice. Playback rate multiplies the YouTube player's rate by the
