@@ -563,38 +563,139 @@
 }
 
 /* ===== dashboard-paper.css ===== */
-.dashboard-subtitle-pane {
-  margin-top: 14px;
-  padding: 13px 20px;
-  min-height: 54px;
+
+/* Wrapper around the YouTube iframe: keeps a positioned context for the
+   subtitle overlay + fullscreen button, and behaves as a fullscreen host so
+   the subtitle stays visible when the user zooms the video full-screen. */
+.dashboard-video-wrapper {
+  position: relative;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.dashboard-video-wrapper.is-fullscreen {
+  border-radius: 0;
+}
+
+/* Subtitle floats over the bottom of the video — no filled background, only a
+   soft text-shadow so the letters stay legible against any frame. */
+.dashboard-subtitle-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6%;
   display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 6%;
+  z-index: 5;
+}
+
+.dashboard-subtitle-pane {
+  margin: 0;
+  padding: 4px 12px;
+  min-height: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  border-radius: 6px;
-  background: rgba(120, 80, 40, 0.22);
-  border: 1px solid rgba(128, 144, 118, 0.16);
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
 }
 
 .dashboard-subtitle-text {
   margin: 0;
-  color: #f4eed6;
+  color: #ffffff;
   font:
-    500 17px/1.5 var(--font-onest),
+    600 20px/1.35 var(--font-onest),
     system-ui,
     sans-serif;
+  /* Soft outline so white text stays readable over any scene (bright/dark). */
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.65),
+    0 0 1px rgba(0, 0, 0, 0.9);
 }
 
-/* Karaoke-style progressive highlight — .is-read is the "already read" tail
-   of the current subtitle line, driven by the segment's video-time progress. */
+/* Karaoke highlight — dim "not read yet" words, lit + soft green glow on read. */
 .dashboard-subtitle-word {
-  color: rgba(244, 238, 214, 0.55);
-  transition: color 0.18s ease, text-shadow 0.18s ease;
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.6);
 }
 
 .dashboard-subtitle-word.is-read {
-  color: #d4f0c8;
-  text-shadow: 0 0 8px rgba(126, 200, 126, 0.35);
+  color: #ffffff;
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.6),
+    0 0 10px rgba(126, 220, 130, 0.7),
+    0 0 18px rgba(80, 200, 100, 0.35);
+}
+
+/* Fullscreen toggle sits in the top-right corner of the video; matches the
+   YouTube control aesthetic. */
+.dashboard-fs-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+}
+
+.dashboard-video-wrapper:hover .dashboard-fs-btn,
+.dashboard-video-wrapper.is-fullscreen .dashboard-fs-btn,
+.dashboard-fs-btn:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dashboard-fs-btn:hover {
+  background: rgba(0, 0, 0, 0.68);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* In fullscreen the video wrapper covers the whole screen; center the frame,
+   let subtitle overlay sit near the bottom, and hide the outer scrollbar. */
+.dashboard-video-wrapper:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.dashboard-video-wrapper:fullscreen .dashboard-youtube-container,
+.dashboard-video-wrapper:fullscreen .dashboard-video-frame {
+  width: 100%;
+  height: 100%;
+}
+
+.dashboard-video-wrapper:fullscreen .dashboard-subtitle-text {
+  font-size: 28px;
+  line-height: 1.35;
+}
+.dashboard-video-wrapper:fullscreen .dashboard-subtitle-overlay {
+  bottom: 8%;
 }
 
 .dashboard-subtitle-status {
@@ -659,14 +760,14 @@
 .settings-gear-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   background: rgba(30, 44, 31, 0.55);
   border: 1px solid rgba(100, 140, 80, 0.4);
-  border-radius: 7px;
+  border-radius: 6px;
   color: #a0b89e;
-  font: 600 13px/1 var(--font-onest), system-ui, sans-serif;
+  font: 600 12px/1 var(--font-onest), system-ui, sans-serif;
   letter-spacing: 0.02em;
-  padding: 8px 13px;
+  padding: 6px 10px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.15s;
   flex-shrink: 0;
@@ -686,6 +787,30 @@
   box-shadow: 0 0 0 1px rgba(126, 200, 126, 0.25), 0 0 12px rgba(80, 180, 80, 0.18);
 }
 
+/* Light-mode variant for the settings gear button */
+:root:not(.dark) .settings-gear-btn {
+  color: #2a5a34;
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(80, 140, 90, 0.35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+:root:not(.dark) .settings-gear-btn:hover {
+  color: #1a4a24;
+  background: #ffffff;
+  border-color: rgba(60, 150, 80, 0.6);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.09);
+}
+
+:root:not(.dark) .settings-gear-btn.is-open {
+  color: #ffffff;
+  background: linear-gradient(180deg, #4fbe5f, #3aa04a);
+  border-color: rgba(40, 130, 60, 0.9);
+  box-shadow:
+    0 2px 8px rgba(60, 160, 80, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
 .settings-gear-btn.is-open svg {
   transform: rotate(60deg);
   transition: transform 0.35s ease;
@@ -700,38 +825,151 @@
 }
 
 .settings-panel {
+  /* YouTube-style compact dropup with a frosted sheet — the video and subtitle
+     behind stay softly visible through the blur. Themed: light-cream in day
+     mode, dark-frosted in night mode (overridden below). */
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 240px;
+  max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px 18px;
-  background: rgba(14, 22, 15, 0.94);
-  border: 1px solid rgba(80, 110, 75, 0.5);
-  border-radius: 10px;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  color: #1a2820;
   font-family: var(--font-onest), Arial, sans-serif;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-  animation: settingsSlideIn 0.22s ease-out;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transform-origin: bottom right;
+  animation: settingsSlideIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dark-mode variant of the settings dropup — deep frosted charcoal with a
+   subtle green tint so it feels like part of the app's night palette. */
+.dark .settings-panel {
+  background: rgba(18, 26, 20, 0.78);
+  border: 1px solid rgba(140, 180, 140, 0.22);
+  color: #d4e5d0;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dark .settings-panel .settings-section-label {
+  color: #8aac8a;
+}
+
+.dark .settings-panel .settings-section + .settings-section {
+  border-top-color: rgba(140, 180, 140, 0.18);
+}
+
+.dark .settings-panel .dub-voice-card {
+  background: rgba(60, 82, 62, 0.35);
+  border-color: rgba(120, 160, 120, 0.28);
+}
+.dark .settings-panel .dub-voice-card:hover:not(:disabled) {
+  background: rgba(80, 110, 82, 0.5);
+  border-color: rgba(160, 220, 160, 0.5);
+}
+.dark .settings-panel .dub-voice-card.is-selected {
+  background: rgba(80, 200, 100, 0.25);
+  border-color: rgba(126, 220, 130, 0.6);
+  box-shadow:
+    0 0 0 2px rgba(126, 220, 130, 0.25),
+    0 2px 8px rgba(80, 200, 100, 0.22);
+}
+.dark .settings-panel .dub-voice-name {
+  color: #cfe4ce;
+}
+.dark .settings-panel .dub-voice-card.is-selected .dub-voice-name {
+  color: #eaffe0;
+}
+.dark .settings-panel .dub-voice-gender {
+  color: #8aac8a;
+}
+.dark .settings-panel .dub-voice-card.is-selected .dub-voice-gender {
+  color: #a6ffa6;
+}
+
+.dark .settings-panel .dub-vol-label {
+  color: #b8ccb4;
+}
+.dark .settings-panel .dub-vol-slider {
+  background: linear-gradient(
+    to top,
+    #7ed88a 0%,
+    #7ed88a var(--fill, 50%),
+    rgba(140, 180, 140, 0.2) var(--fill, 50%),
+    rgba(140, 180, 140, 0.2) 100%
+  );
+}
+.dark .settings-panel .dub-vol-slider::-webkit-slider-thumb {
+  background: #eaffe4;
+  border-color: #7ed88a;
+}
+.dark .settings-panel .dub-vol-slider:not(:disabled)::-webkit-slider-thumb:hover {
+  background: #ffffff;
+}
+.dark .settings-panel .dub-vol-slider::-moz-range-thumb {
+  background: #eaffe4;
+  border-color: #7ed88a;
+}
+.dark .settings-panel .dub-vol-value {
+  color: #d4f0c8;
+}
+.dark .settings-panel .dub-speed-value {
+  background: rgba(60, 82, 62, 0.35);
+  border-color: rgba(140, 180, 140, 0.25);
+}
+.dark .settings-panel .dub-speed-value:hover,
+.dark .settings-panel .dub-speed-value:focus-within {
+  background: rgba(80, 110, 82, 0.5);
+  border-color: rgba(160, 220, 160, 0.55);
+  box-shadow: 0 0 0 3px rgba(126, 220, 130, 0.18);
+}
+.dark .settings-panel .dub-speed-input {
+  color: #d4f0c8;
+}
+.dark .settings-panel .dub-speed-suffix {
+  color: #8aac8a;
 }
 
 @keyframes settingsSlideIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .settings-section + .settings-section {
-  padding-top: 12px;
-  border-top: 1px solid rgba(60, 80, 55, 0.35);
+  padding-top: 8px;
+  border-top: 1px solid rgba(26, 40, 32, 0.12);
 }
 
-.settings-section-label {
-  font: 700 12px/1 var(--font-onest), Arial, sans-serif;
+.settings-panel .settings-section-label {
+  font: 700 10.5px/1 var(--font-onest), Arial, sans-serif;
   letter-spacing: 0.14em;
-  color: #7a9678;
+  color: #4a6852;
   text-transform: uppercase;
 }
 
@@ -755,7 +993,17 @@
   justify-content: space-between;
 }
 
-/* Main toggle button */
+/* Wraps the gear button + dropup so the panel anchors to the button (not the
+   full row) and stays right-aligned with it. */
+.settings-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Main toggle button — themed:
+   • dark mode (default `.dark`): olive on dark green, current look
+   • light mode (`:not(.dark)`): dark green on cream, active turns solid green */
 .dub-main-btn {
   display: inline-flex;
   align-items: center;
@@ -768,7 +1016,7 @@
   border: 1px solid rgba(46, 61, 48, 0.9);
   border-radius: 7px;
   cursor: pointer;
-  transition: color 0.18s, border-color 0.18s, background 0.18s;
+  transition: color 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 
 .dub-main-btn:hover:not(:disabled):not(.is-loading) {
@@ -808,6 +1056,66 @@
 .dub-main-btn:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+/* ── Light-mode variant for the dub button ─────────────────────────────
+   Dark cream on soft green — pops against a light page, active state uses
+   a solid green fill for a clear "on" indicator. */
+:root:not(.dark) .dub-main-btn {
+  color: #2a5a34;
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(80, 140, 90, 0.35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+:root:not(.dark) .dub-main-btn:hover:not(:disabled):not(.is-loading) {
+  color: #1a4a24;
+  background: #ffffff;
+  border-color: rgba(60, 150, 80, 0.55);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.09);
+}
+
+:root:not(.dark) .dub-main-btn.is-active {
+  color: #ffffff;
+  background: linear-gradient(180deg, #4fbe5f, #3aa04a);
+  border-color: rgba(40, 130, 60, 0.9);
+  box-shadow:
+    0 2px 8px rgba(60, 160, 80, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+:root:not(.dark) .dub-main-btn.is-active:hover:not(:disabled) {
+  background: linear-gradient(180deg, #5cc86b, #45ac54);
+  border-color: rgba(35, 120, 55, 1);
+}
+
+:root:not(.dark) .dub-main-btn.is-error {
+  color: #ffffff;
+  background: linear-gradient(180deg, #d05656, #b34848);
+  border-color: rgba(150, 60, 60, 0.9);
+}
+
+:root:not(.dark) .dub-main-btn.is-error:hover:not(:disabled) {
+  background: linear-gradient(180deg, #d95f5f, #b95050);
+}
+
+:root:not(.dark) .dub-main-btn.is-loading {
+  color: #4a6a52;
+  background: rgba(240, 246, 235, 0.9);
+  border-color: rgba(120, 160, 130, 0.35);
+}
+
+:root:not(.dark) .dub-dot {
+  background: #b0c2b3;
+}
+:root:not(.dark) .dub-main-btn.is-active .dub-dot.is-lit {
+  background: #ffffff;
+  box-shadow: 0 0 7px 1px rgba(255, 255, 255, 0.55);
+}
+
+:root:not(.dark) .dub-spinner {
+  border-color: rgba(60, 130, 80, 0.2);
+  border-top-color: #3aa04a;
 }
 
 /* Status dot */
@@ -915,10 +1223,17 @@
 }
 
 .dub-count {
-  font: 11px var(--font-mono), monospace;
-  color: #526054;
-  letter-spacing: 0.05em;
+  font: 700 12px/1 var(--font-mono), monospace;
+  color: #9dae92;
+  letter-spacing: 0.03em;
+  min-width: 38px;
+  text-align: right;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+:root:not(.dark) .dub-count {
+  color: #2a5a34;
 }
 
 /* Volume controls */
@@ -927,46 +1242,48 @@
   flex-direction: row;
   justify-content: center;
   align-items: flex-end;
-  gap: 28px;
-  padding: 6px 0 2px;
+  gap: 18px;
+  padding: 4px 0 0;
 }
 
 .dub-vol-row {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
+  gap: 5px;
 }
 
-.dub-vol-label {
-  font: 600 12.5px/1 var(--font-onest), Arial, sans-serif;
-  color: #a0b89e;
+.settings-panel .dub-vol-label {
+  font: 600 11px/1 var(--font-onest), Arial, sans-serif;
+  color: #3a5040;
   text-align: center;
   letter-spacing: 0.02em;
 }
 
-.dub-vol-slider {
+.settings-panel .dub-vol-slider {
   -webkit-appearance: none;
   appearance: none;
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 6px;
-  height: 92px;
+  width: 5px;
+  height: 62px;
   border-radius: 99px;
   background: linear-gradient(
     to top,
-    #7ec87e 0%,
-    #7ec87e var(--fill, 50%),
-    rgba(128, 144, 118, 0.22) var(--fill, 50%),
-    rgba(128, 144, 118, 0.22) 100%
+    #3a9a4a 0%,
+    #3a9a4a var(--fill, 50%),
+    rgba(26, 40, 32, 0.16) var(--fill, 50%),
+    rgba(26, 40, 32, 0.16) 100%
   );
   cursor: pointer;
   outline: none;
-  transition: box-shadow 0.15s;
+  transition:
+    box-shadow 0.2s ease,
+    background 0.2s ease;
 }
 
-.dub-vol-slider:not(:disabled):hover {
-  box-shadow: 0 0 0 4px rgba(126, 200, 126, 0.08);
+.settings-panel .dub-vol-slider:not(:disabled):hover {
+  box-shadow: 0 0 0 5px rgba(80, 180, 100, 0.12);
 }
 
 .dub-vol-slider:disabled {
@@ -974,44 +1291,107 @@
   cursor: not-allowed;
 }
 
-.dub-vol-slider::-webkit-slider-thumb {
+.settings-panel .dub-vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  background: #c4d9b8;
-  border: 2px solid #0c1413;
-  box-shadow: 0 0 6px rgba(126, 200, 126, 0.4);
+  background: #ffffff;
+  border: 2px solid #3a9a4a;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.15),
+    0 0 0 0 rgba(80, 180, 100, 0);
   cursor: pointer;
-  transition: background 0.15s, transform 0.15s;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.15s;
 }
 
-.dub-vol-slider:not(:disabled)::-webkit-slider-thumb:hover {
-  background: #d4f0c8;
-  transform: scale(1.2);
+.settings-panel .dub-vol-slider:not(:disabled)::-webkit-slider-thumb:hover {
+  background: #eaffe6;
+  transform: scale(1.15);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 0 0 4px rgba(80, 180, 100, 0.18);
 }
 
-.dub-vol-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+.settings-panel .dub-vol-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  background: #c4d9b8;
-  border: 2px solid #0c1413;
-  box-shadow: 0 0 6px rgba(126, 200, 126, 0.4);
+  background: #ffffff;
+  border: 2px solid #3a9a4a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s;
 }
 
-.dub-vol-value {
-  font: 700 13px/1 var(--font-mono), monospace;
-  color: #c4d9b8;
+.settings-panel .dub-vol-slider:not(:disabled)::-moz-range-thumb:hover {
+  background: #eaffe6;
+  transform: scale(1.15);
+}
+
+.settings-panel .dub-vol-value {
+  font: 700 11px/1 var(--font-mono), monospace;
+  color: #1a5a2a;
   text-align: center;
-  min-width: 44px;
+  min-width: 34px;
+}
+
+/* Editable speed value: a small "1.25x" pill where the number is typeable. */
+.settings-panel .dub-speed-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(26, 40, 32, 0.14);
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.settings-panel .dub-speed-value:hover,
+.settings-panel .dub-speed-value:focus-within {
+  background: #ffffff;
+  border-color: rgba(60, 160, 80, 0.55);
+  box-shadow: 0 0 0 3px rgba(80, 180, 100, 0.16);
+}
+
+.settings-panel .dub-speed-input {
+  width: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: #1a5a2a;
+  font: 700 12px/1 var(--font-mono), monospace;
+  text-align: right;
+  cursor: text;
+}
+
+.settings-panel .dub-speed-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Chrome/Safari: hide the number-input spinner arrows if the browser adds them. */
+.settings-panel .dub-speed-input::-webkit-outer-spin-button,
+.settings-panel .dub-speed-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.settings-panel .dub-speed-suffix {
+  color: #4a6852;
+  font: 700 11px/1 var(--font-mono), monospace;
+  user-select: none;
 }
 
 /* Voice picker */
 .dub-voice-picker {
   display: flex;
-  gap: 10px;
+  gap: 6px;
 }
 
 .dub-voice-card {
@@ -1019,27 +1399,34 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 12px 18px;
-  min-width: 130px;
-  background: rgba(30, 44, 31, 0.55);
-  border: 1px solid rgba(70, 90, 62, 0.85);
-  border-radius: 8px;
+  gap: 6px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(26, 40, 32, 0.12);
+  border-radius: 7px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s ease;
 }
 
-.dub-voice-card:hover:not(:disabled) {
-  border-color: rgba(157, 174, 146, 0.65);
-  background: rgba(56, 78, 58, 0.65);
+.settings-panel .dub-voice-card:hover:not(:disabled) {
+  border-color: rgba(60, 140, 80, 0.5);
+  background: rgba(255, 255, 255, 0.9);
   transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-.dub-voice-card.is-selected {
-  background: rgba(126, 200, 126, 0.18);
-  border-color: rgba(126, 200, 126, 0.7);
-  box-shadow: 0 0 0 1px rgba(126, 200, 126, 0.25);
+.settings-panel .dub-voice-card.is-selected {
+  background: rgba(80, 180, 100, 0.18);
+  border-color: rgba(60, 160, 80, 0.55);
+  box-shadow:
+    0 0 0 2px rgba(80, 180, 100, 0.28),
+    0 2px 8px rgba(60, 160, 80, 0.18);
   cursor: default;
+  transform: translateY(-1px);
 }
 
 .dub-voice-card:disabled {
@@ -1047,34 +1434,72 @@
   cursor: not-allowed;
 }
 
-.dub-voice-name {
-  font: 600 14px/1 var(--font-onest), Arial, sans-serif;
-  color: #b0c8ac;
+.settings-panel .dub-voice-name {
+  font: 600 12.5px/1 var(--font-onest), Arial, sans-serif;
+  color: #2a3a30;
   letter-spacing: 0.01em;
+  transition: color 0.2s ease;
 }
 
-.dub-voice-card.is-selected .dub-voice-name {
-  color: #d4f0c8;
+.settings-panel .dub-voice-card.is-selected .dub-voice-name {
+  color: #1a5a2a;
 }
 
-.dub-voice-gender {
-  font: 700 18px/1 Arial, sans-serif;
-  color: #7a9678;
-  width: 20px;
+.settings-panel .dub-voice-gender {
+  font: 700 14px/1 Arial, sans-serif;
+  color: #6a806e;
+  width: 15px;
   text-align: center;
+  transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
-.dub-voice-card.is-selected .dub-voice-gender {
-  color: #7ec87e;
-  text-shadow: 0 0 6px rgba(126, 200, 126, 0.35);
+.settings-panel .dub-voice-card.is-selected .dub-voice-gender {
+  color: #2a8a3a;
+  text-shadow: 0 0 6px rgba(80, 180, 100, 0.35);
 }
 
 /* Ready / error labels */
 .dub-ready-text {
   margin: 0;
-  font: 11px var(--font-mono), monospace;
-  color: #6a8070;
-  letter-spacing: 0.08em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  font: 700 13px/1 var(--font-onest), system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  color: #eaffe0;
+  background: linear-gradient(180deg, rgba(80, 200, 100, 0.22), rgba(60, 160, 80, 0.32));
+  border: 1px solid rgba(126, 220, 130, 0.4);
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 1px rgba(126, 220, 130, 0.14),
+    0 2px 8px rgba(60, 160, 80, 0.18);
+  width: fit-content;
+  animation: dubReadyPop 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dub-ready-text svg {
+  color: #7ed88a;
+  filter: drop-shadow(0 0 4px rgba(126, 220, 130, 0.55));
+}
+
+@keyframes dubReadyPop {
+  from { opacity: 0; transform: translateY(-3px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+:root:not(.dark) .dub-ready-text {
+  color: #1a4a24;
+  background: linear-gradient(180deg, #dcfae0, #b8f2c0);
+  border-color: rgba(60, 160, 80, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(60, 160, 80, 0.15),
+    0 3px 10px rgba(60, 160, 80, 0.22);
+}
+
+:root:not(.dark) .dub-ready-text svg {
+  color: #2a9040;
+  filter: drop-shadow(0 0 3px rgba(60, 160, 80, 0.4));
 }
 
 .dub-error-text {

@@ -12,6 +12,9 @@ export type YouTubePlayer = {
   seekTo?: (seconds: number, allowSeekAhead: boolean) => void
   loadModule?: (module: string) => void
   unloadModule?: (module: string) => void
+  setOption?: (module: string, option: string, value: unknown) => void
+  getOption?: (module: string, option: string) => unknown
+  getOptions?: (module?: string) => unknown
   setPlaybackQuality?: (quality: string) => void
   getPlaybackQuality?: () => string
   getAvailableQualityLevels?: () => string[]
@@ -34,6 +37,7 @@ export type YouTubeNamespace = {
       events: {
         onReady: (event: YouTubeEvent) => void
         onStateChange: (event: YouTubeEvent) => void
+        onApiChange?: (event: YouTubeEvent) => void
       }
     },
   ) => YouTubePlayer

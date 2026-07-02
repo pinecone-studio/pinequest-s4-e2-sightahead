@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from app.models.entities import SubscriptionStatus, UserEntitlements, UserPlan, UserProfile
